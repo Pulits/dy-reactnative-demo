@@ -1,17 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { bySku, CURRENCY, formatPrice } from '../catalog';
+import { bySku, CURRENCY, formatPrice, productToDisplay } from '../catalog';
+import { FadeInUp } from '../components/motion';
+import { ProductCard } from '../components/ProductCard';
 import { usePageView, useTrackEvent, type DyPageContext } from '../dy';
 import { useCart } from '../state/CartContext';
 import { theme } from '../theme';
-
-const CART_CONTEXT: DyPageContext = {
-  type: 'CART',
-  location: 'dydemo://cart',
-  data: [],
-  locale: 'es_ES',
-};
 
 export const CartScreen: React.FC<{ onContinue: () => void }> = ({
   onContinue,
@@ -19,8 +14,6 @@ export const CartScreen: React.FC<{ onContinue: () => void }> = ({
   const cart = useCart();
   const trackEvent = useTrackEvent();
   const [confirmation, setConfirmation] = useState<string | null>(null);
-
-  usePageView(CART_CONTEXT);
 
   const lines = useMemo(
     () =>
@@ -30,6 +23,20 @@ export const CartScreen: React.FC<{ onContinue: () => void }> = ({
       }),
     [cart.lines],
   );
+
+  // El contexto de CART lleva los SKUs del carrito: DY los usa para segmentar
+  // y para campañas de recuperación.
+  const context = useMemo<DyPageContext>(
+    () => ({
+      type: 'CART',
+      location: 'dydemo://cart',
+      data: cart.lines.map(line => line.sku),
+      locale: 'es_ES',
+    }),
+    [cart.lines],
+  );
+
+  usePageView(context);
 
   const handlePurchase = (): void => {
     // El id de transacción debe ser único: DY lo usa para deduplicar compras.
@@ -50,53 +57,91 @@ export const CartScreen: React.FC<{ onContinue: () => void }> = ({
 
   if (confirmation) {
     return (
-      <View style={styles.empty}>
+      <FadeInUp style={styles.empty}>
+        <View style={styles.tick}>
+          <Text style={styles.tickMark}>✓</Text>
+        </View>
         <Text style={styles.emptyTitle}>Pedido confirmado</Text>
         <Text style={styles.emptyBody}>
-          Se ha enviado el evento de compra a Dynamic Yield con el id{' '}
-          {confirmation}. Ábrelo en el panel de actividad para ver el payload.
+          Se envió el evento de compra a Dynamic Yield con el id{' '}
+          <Text style={styles.mono}>{confirmation}</Text>. Ábrelo en el panel DY
+          para ver el payload exacto.
         </Text>
-        <Pressable onPress={onContinue} accessibilityRole="button">
-          <Text style={styles.link}>Volver a la tienda</Text>
+        <Pressable
+          onPress={onContinue}
+          accessibilityRole="button"
+          style={styles.ghostCta}>
+          <Text style={styles.ghostCtaText}>Volver a la tienda</Text>
         </Pressable>
-      </View>
+      </FadeInUp>
     );
   }
 
   if (lines.length === 0) {
     return (
       <View style={styles.empty}>
+        <Text style={styles.emptyEmoji}>🎒</Text>
         <Text style={styles.emptyTitle}>Tu carrito está vacío</Text>
-        <Pressable onPress={onContinue} accessibilityRole="button">
-          <Text style={styles.link}>Ver productos</Text>
+        <Text style={styles.emptyBody}>
+          Añade algo para ver el evento de compra viajar a DY.
+        </Text>
+        <Pressable
+          onPress={onContinue}
+          accessibilityRole="button"
+          style={styles.ghostCta}>
+          <Text style={styles.ghostCtaText}>Ver productos</Text>
         </Pressable>
       </View>
     );
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.content}>
-      {lines.map(line => (
-        <View key={line.sku} style={styles.line}>
-          <View style={[styles.thumb, { backgroundColor: line.product.color }]} />
-          <View style={styles.lineBody}>
-            <Text style={styles.lineName}>{line.product.name}</Text>
-            <Text style={styles.lineMeta}>
-              {line.quantity} × {formatPrice(line.product.price)}
-            </Text>
+    <ScrollView
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}>
+      {lines.map((line, index) => (
+        <FadeInUp key={line.sku} delay={index * 60}>
+          <View style={styles.lineWrap}>
+            <ProductCard
+              product={productToDisplay(line.product)}
+              variant="row"
+              onPress={() => {}}
+            />
+            <View style={styles.qty}>
+              <Pressable
+                onPress={() => cart.remove(line.sku)}
+                accessibilityRole="button"
+                accessibilityLabel={`Quitar una unidad de ${line.product.name}`}
+                style={styles.qtyButton}>
+                <Text style={styles.qtySign}>−</Text>
+              </Pressable>
+              <Text style={styles.qtyValue}>{line.quantity}</Text>
+              <Pressable
+                onPress={() => cart.add(line.sku)}
+                accessibilityRole="button"
+                accessibilityLabel={`Añadir una unidad de ${line.product.name}`}
+                style={styles.qtyButton}>
+                <Text style={styles.qtySign}>+</Text>
+              </Pressable>
+            </View>
           </View>
-          <Pressable
-            onPress={() => cart.remove(line.sku)}
-            accessibilityRole="button"
-            accessibilityLabel={`Quitar una unidad de ${line.product.name}`}>
-            <Text style={styles.remove}>−</Text>
-          </Pressable>
-        </View>
+        </FadeInUp>
       ))}
 
-      <View style={styles.totalRow}>
-        <Text style={styles.totalLabel}>Total</Text>
-        <Text style={styles.totalValue}>{formatPrice(cart.total)}</Text>
+      <View style={styles.summary}>
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Subtotal</Text>
+          <Text style={styles.summaryValue}>{formatPrice(cart.total)}</Text>
+        </View>
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Envío</Text>
+          <Text style={[styles.summaryValue, styles.free]}>Gratis</Text>
+        </View>
+        <View style={styles.divider} />
+        <View style={styles.summaryRow}>
+          <Text style={styles.totalLabel}>Total</Text>
+          <Text style={styles.totalValue}>{formatPrice(cart.total)}</Text>
+        </View>
       </View>
 
       <Pressable
@@ -110,52 +155,86 @@ export const CartScreen: React.FC<{ onContinue: () => void }> = ({
 };
 
 const styles = StyleSheet.create({
-  content: { padding: theme.space(2), gap: theme.space(1.5) },
-  line: {
+  content: { padding: theme.space(2.5), gap: theme.space(1.5) },
+  lineWrap: { gap: theme.space(1) },
+  qty: {
     flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'flex-end',
     gap: theme.space(1.5),
-    backgroundColor: theme.color.surface,
-    borderRadius: theme.radius.md,
-    padding: theme.space(1.25),
   },
-  thumb: { width: 52, height: 52, borderRadius: theme.radius.sm },
-  lineBody: { flex: 1, gap: 2 },
-  lineName: { color: theme.color.text, fontSize: 14, fontWeight: '600' },
-  lineMeta: { color: theme.color.textMuted, fontSize: 12 },
-  remove: {
-    color: theme.color.textMuted,
-    fontSize: 26,
-    paddingHorizontal: theme.space(1),
-  },
-  totalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingTop: theme.space(1),
-  },
-  totalLabel: { color: theme.color.textMuted, fontSize: 15 },
-  totalValue: { color: theme.color.text, fontSize: 20, fontWeight: '700' },
-  cta: {
-    backgroundColor: theme.color.success,
-    borderRadius: theme.radius.md,
-    paddingVertical: theme.space(1.75),
+  qtyButton: {
+    width: 32,
+    height: 32,
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.color.surfaceAlt,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  ctaPressed: { opacity: 0.75 },
-  ctaText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  qtySign: { color: theme.color.text, fontSize: 18, fontWeight: '700' },
+  qtyValue: {
+    ...theme.font.body,
+    color: theme.color.text,
+    minWidth: 18,
+    textAlign: 'center',
+  },
+  summary: {
+    marginTop: theme.space(1),
+    padding: theme.space(2),
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.color.surface,
+    borderWidth: 1,
+    borderColor: theme.color.borderSoft,
+    gap: theme.space(1),
+  },
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  summaryLabel: { ...theme.font.body, color: theme.color.textMuted },
+  summaryValue: { ...theme.font.body, color: theme.color.text },
+  free: { color: theme.color.success },
+  divider: { height: 1, backgroundColor: theme.color.border },
+  totalLabel: { ...theme.font.heading, color: theme.color.text },
+  totalValue: { fontSize: 21, fontWeight: '800', color: theme.color.accentSoft },
+  cta: {
+    backgroundColor: theme.color.accent,
+    borderRadius: theme.radius.md,
+    paddingVertical: theme.space(2),
+    alignItems: 'center',
+    ...theme.shadow.glow,
+  },
+  ctaPressed: { opacity: 0.85 },
+  ctaText: { ...theme.font.heading, color: '#fff' },
   empty: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: theme.space(3),
-    gap: theme.space(1),
+    padding: theme.space(4),
+    gap: theme.space(1.25),
   },
-  emptyTitle: { color: theme.color.text, fontSize: 18, fontWeight: '700' },
+  emptyEmoji: { fontSize: 44 },
+  tick: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: theme.color.success,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tickMark: { fontSize: 30, color: '#fff', fontWeight: '800' },
+  emptyTitle: { ...theme.font.title, color: theme.color.text },
   emptyBody: {
+    ...theme.font.body,
     color: theme.color.textMuted,
-    fontSize: 13,
-    lineHeight: 19,
+    lineHeight: 21,
     textAlign: 'center',
   },
-  link: { color: theme.color.accent, fontSize: 15, fontWeight: '600' },
+  mono: { color: theme.color.accentSoft },
+  ghostCta: {
+    marginTop: theme.space(1),
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    borderColor: theme.color.border,
+    paddingHorizontal: theme.space(2.5),
+    paddingVertical: theme.space(1.25),
+  },
+  ghostCtaText: { ...theme.font.body, color: theme.color.text },
 });

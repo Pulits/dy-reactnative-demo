@@ -14,7 +14,11 @@ export { SELECTORS } from './mockClient';
 export { createDyClient, isNativeSdkAvailable, activeClientKind } from './createClient';
 export { DY_CONFIG, DY_API_KEY, hasRealApiKey } from './dyConfig';
 export { asRecommendationPayload, asBannerPayload } from './payloads';
-export type { RecommendationPayload, BannerPayload } from './payloads';
+export type {
+  RecommendationPayload,
+  BannerPayload,
+  DyProductData,
+} from './payloads';
 export type { DyClient, DyLogEntry, ObservableDyClient } from './DyClient';
 export type {
   DyCartLine,

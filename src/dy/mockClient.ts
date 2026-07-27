@@ -1,4 +1,4 @@
-import { CATALOG } from '../catalog';
+import { CATALOG, bySku } from '../catalog';
 import type {
   DyClient,
   DyLogEntry,
@@ -100,6 +100,7 @@ export const createMockDyClient = (): ObservableDyClient => {
               // El SDK entrega los CUSTOM_JSON como cadena; se replica aquí para
               // que `asBannerPayload` reciba lo mismo en ambos adaptadores.
               data: JSON.stringify({
+                eyebrow: 'Solo esta semana',
                 title: 'Envío gratis en pedidos +60 €',
                 body: 'Recíbelo en 24-48 h en península. Devoluciones sin coste durante 30 días.',
                 cta: 'Ver condiciones',
@@ -127,8 +128,24 @@ export const createMockDyClient = (): ObservableDyClient => {
             id: ++variationSeq,
             payload: {
               type: 'RECS',
+              // Misma forma que devuelve DY con recsProductData.skusOnly=false:
+              // los nombres de campo son los del feed (image_url, in_stock).
               data: {
-                slots: skus.map(sku => ({ sku, slotId: randomId('slot') })),
+                slots: skus.map(sku => {
+                  const product = bySku(sku);
+                  return {
+                    sku,
+                    slotId: randomId('slot'),
+                    productData: {
+                      name: product?.name,
+                      price: product?.price,
+                      brand: product?.brand,
+                      image_url: product?.imageUrl,
+                      in_stock: product?.inStock,
+                      categories: product ? [product.category] : undefined,
+                    },
+                  };
+                }),
               },
             },
           },

@@ -1,5 +1,6 @@
 import { createMockDyClient, SELECTORS } from '../src/dy/mockClient';
 import { asBannerPayload, asRecommendationPayload } from '../src/dy/payloads';
+import { toDisplayProduct } from '../src/catalog';
 import type { DyConfig, DyPageContext } from '../src/dy/types';
 
 const CONFIG: DyConfig = {
@@ -210,6 +211,78 @@ describe('validadores de payload', () => {
     const raw = choices[0].variations[0].payload.data;
     expect(typeof raw).toBe('string');
     expect(asBannerPayload(choices[0].variations[0])).not.toBeNull();
+  });
+
+  it('lee los datos de producto del feed de DY, con sus nombres de campo', () => {
+    const payload = asRecommendationPayload({
+      id: 1,
+      payload: {
+        type: 'RECS',
+        data: {
+          slots: [
+            {
+              sku: 'SKU-9001',
+              slotId: 'slot_a',
+              productData: {
+                name: 'Anorak Ventisca',
+                // El feed usa snake_case, no camelCase.
+                image_url: 'https://cdn.example.com/a.jpg',
+                in_stock: false,
+                brand: 'Cima',
+                // Y puede mandar el precio como cadena.
+                price: '149.95',
+                categories: ['Abrigo'],
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    expect(payload?.slots[0]).toEqual({
+      sku: 'SKU-9001',
+      slotId: 'slot_a',
+      name: 'Anorak Ventisca',
+      price: 149.95,
+      imageUrl: 'https://cdn.example.com/a.jpg',
+      url: undefined,
+      brand: 'Cima',
+      inStock: false,
+      categories: ['Abrigo'],
+    });
+  });
+
+  it('acepta slots sin productData (respuesta con skusOnly)', () => {
+    const payload = asRecommendationPayload({
+      id: 1,
+      payload: { type: 'RECS', data: { slots: [{ sku: 'SKU-1001' }] } },
+    });
+
+    expect(payload?.slots[0].sku).toBe('SKU-1001');
+    expect(payload?.slots[0].name).toBeUndefined();
+  });
+
+  it('prioriza los datos de DY sobre el catálogo local y marca el origen', () => {
+    const fromDy = toDisplayProduct({
+      sku: 'SKU-1001',
+      name: 'Nombre desde DY',
+      price: 99,
+    });
+    expect(fromDy.name).toBe('Nombre desde DY');
+    expect(fromDy.price).toBe(99);
+    expect(fromDy.source).toBe('dy');
+
+    // Sin productData, el catálogo local rellena los huecos.
+    const fromCatalog = toDisplayProduct({ sku: 'SKU-1001' });
+    expect(fromCatalog.name).toBe('Zapatilla Trail Alpina');
+    expect(fromCatalog.source).toBe('catálogo');
+  });
+
+  it('muestra un SKU que DY recomienda pero la tienda no conoce', () => {
+    const unknown = toDisplayProduct({ sku: 'SKU-DESCONOCIDO' });
+    // Cae al SKU como nombre en vez de desaparecer del carrusel.
+    expect(unknown.name).toBe('SKU-DESCONOCIDO');
+    expect(unknown.inStock).toBe(true);
   });
 
   it('asigna ids de variación numéricos, como espera reportImpression', async () => {

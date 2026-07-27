@@ -1,7 +1,9 @@
 import React, { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { CATALOG } from '../catalog';
+import { CATALOG, productToDisplay } from '../catalog';
+import { HeroBanner } from '../components/HeroBanner';
+import { FadeInUp } from '../components/motion';
 import { ProductCard } from '../components/ProductCard';
 import { RecommendationRail } from '../components/RecommendationRail';
 import {
@@ -28,36 +30,42 @@ export const HomeScreen: React.FC<{
 
   // `implicitPageview` deja que DY registre el pageview con esta misma llamada,
   // en vez de emitir un pageView() aparte.
-  const { choices } = useChoose(bannerSelectors, HOME_CONTEXT, {
+  const { choices, loading } = useChoose(bannerSelectors, HOME_CONTEXT, {
     implicitPageview: true,
   });
   const banner = asBannerPayload(choices[0]?.variations[0]);
 
   return (
-    <ScrollView contentContainerStyle={styles.content}>
-      {banner && (
-        <View style={styles.banner}>
-          <Text style={styles.bannerTitle}>{banner.title}</Text>
-          <Text style={styles.bannerBody}>{banner.body}</Text>
-          {banner.cta ? <Text style={styles.bannerCta}>{banner.cta} →</Text> : null}
-        </View>
-      )}
+    <ScrollView
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}>
+      <HeroBanner banner={banner} loading={loading} />
 
       <RecommendationRail
         title="Recomendado para ti"
+        subtitle="Personalizado según tu actividad"
         selector={SELECTORS.homeRecs}
         context={HOME_CONTEXT}
         onSelectProduct={onSelectProduct}
       />
 
-      <Text style={styles.sectionTitle}>Todo el catálogo</Text>
+      <View style={styles.catalogHead}>
+        <Text style={styles.sectionTitle}>Todo el catálogo</Text>
+        <Text style={styles.sectionCount}>{CATALOG.length} artículos</Text>
+      </View>
+
       <View style={styles.grid}>
-        {CATALOG.map(product => (
-          <ProductCard
+        {CATALOG.map((product, index) => (
+          <FadeInUp
             key={product.sku}
-            product={product}
-            onPress={() => onSelectProduct(product.sku)}
-          />
+            delay={index * 45}
+            style={styles.gridItem}>
+            <ProductCard
+              product={productToDisplay(product)}
+              variant="grid"
+              onPress={() => onSelectProduct(product.sku)}
+            />
+          </FadeInUp>
         ))}
       </View>
     </ScrollView>
@@ -65,30 +73,22 @@ export const HomeScreen: React.FC<{
 };
 
 const styles = StyleSheet.create({
-  content: { paddingBottom: theme.space(4) },
-  banner: {
-    margin: theme.space(2),
-    padding: theme.space(2),
-    backgroundColor: theme.color.surfaceAlt,
-    borderRadius: theme.radius.md,
-    borderLeftWidth: 3,
-    borderLeftColor: theme.color.accent,
-    gap: 4,
+  content: { paddingBottom: theme.space(5) },
+  catalogHead: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    paddingHorizontal: theme.space(2.5),
+    paddingTop: theme.space(1),
   },
-  bannerTitle: { color: theme.color.text, fontSize: 16, fontWeight: '700' },
-  bannerBody: { color: theme.color.textMuted, fontSize: 13, lineHeight: 19 },
-  bannerCta: { color: theme.color.accent, fontSize: 13, fontWeight: '600' },
-  sectionTitle: {
-    color: theme.color.text,
-    fontSize: 18,
-    fontWeight: '700',
-    paddingHorizontal: theme.space(2),
-    paddingTop: theme.space(2),
-  },
+  sectionTitle: { ...theme.font.title, color: theme.color.text },
+  sectionCount: { ...theme.font.small, color: theme.color.textFaint },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: theme.space(1.5),
-    padding: theme.space(2),
+    justifyContent: 'space-between',
+    gap: theme.space(2),
+    padding: theme.space(2.5),
   },
+  gridItem: { width: '48%' },
 });

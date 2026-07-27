@@ -110,6 +110,26 @@ Los tests cubren el adaptador simulado y los validadores de payload. El
 adaptador nativo no es testeable en Jest (necesita el TurboModule), pero `tsc`
 lo verifica contra los tipos reales del SDK.
 
+## De dónde salen los productos
+
+Con `recsProductData: { skusOnly: false }`, DY devuelve el producto completo del
+feed — `name`, `price`, `image_url`, `brand`, `in_stock` — y la app lo pinta
+directamente. El catálogo local (`src/catalog.ts`) solo rellena los huecos que
+el feed no traiga, que es el papel que tendría el backend de la tienda en una
+integración real.
+
+`toDisplayProduct` fusiona ambas fuentes y marca el origen, visible en el chip
+de cada carrusel:
+
+- **"datos del feed de DY"** — la campaña trajo los productos completos.
+- **"SKUs de DY · datos locales"** — la campaña solo trajo SKUs.
+
+Un SKU que DY recomienda pero la tienda no conoce se sigue mostrando, en vez de
+dejar un hueco en el carrusel.
+
+Ojo con los nombres de campo: el feed usa `snake_case` (`image_url`,
+`in_stock`), no camelCase, y puede mandar el precio como cadena.
+
 ## Qué mirar en la demo
 
 - **Home** — banner de contenido y carrusel "Recomendado para ti". El `choose`

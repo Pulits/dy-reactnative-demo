@@ -257,6 +257,9 @@ export const createNativeDyClient = (): ObservableDyClient => {
           isImplicitPageview: request.implicitPageview ?? false,
           isImplicitImpressionMode: false,
         },
+        // Con skusOnly:false DY devuelve el producto completo del feed (nombre,
+        // precio, image_url, marca) y la app no depende del catálogo local.
+        recsProductData: { skusOnly: false },
       });
       assertOk(result, 'chooseVariations');
 
