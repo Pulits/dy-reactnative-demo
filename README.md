@@ -88,15 +88,30 @@ Los selectores que espera la demo están en `SELECTORS` (`src/dy/mockClient.ts`)
 
 ## Ejecutar
 
-Requisitos del SDK 1.5.0: **React Native ≥ 0.81**, iOS 14+, Android minSDK 24.
+Requisitos: **Node ≥ 20.19.4** (lo exige React Native 0.81), iOS 14+,
+Android minSDK 24.
+
+### El `.npmrc` va ANTES del primer `npm install`
+
+`.npmrc` está en `.gitignore` — con razón, porque lleva un token — así que un
+clon recién hecho **no lo tiene**. Sin él, `npm install` busca
+`@dynamicyield/react-native-sdk` en el npm público y falla con un 404
+engañoso: el paquete existe, pero solo en GitHub Packages.
 
 ```sh
+cat > .npmrc <<'EOF'
+@dynamicyield:registry=https://npm.pkg.github.com/
+//npm.pkg.github.com/:_authToken=TU_TOKEN_CLASICO
+EOF
+
 npm install
 npm start           # Metro
 
 npm run android
 npm run ios         # antes: cd ios && pod install && cd ..
 ```
+
+Ver arriba cómo generar el token clásico con `read:packages`.
 
 ## Comprobaciones
 
