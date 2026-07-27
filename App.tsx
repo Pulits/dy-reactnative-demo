@@ -1,12 +1,10 @@
 import React, { useCallback, useState } from 'react';
+import { Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
+// El SafeAreaView de react-native quedó deprecado en 0.81.
 import {
-  Pressable,
+  SafeAreaProvider,
   SafeAreaView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+} from 'react-native-safe-area-context';
 
 import { DyDebugPanel } from './src/components/DyDebugPanel';
 import { DyProvider } from './src/dy';
@@ -86,11 +84,13 @@ const Shell: React.FC = () => {
 };
 
 const App: React.FC = () => (
-  <DyProvider>
-    <CartProvider>
-      <Shell />
-    </CartProvider>
-  </DyProvider>
+  <SafeAreaProvider>
+    <DyProvider>
+      <CartProvider>
+        <Shell />
+      </CartProvider>
+    </DyProvider>
+  </SafeAreaProvider>
 );
 
 const styles = StyleSheet.create({

@@ -12,8 +12,11 @@ import {
 } from '../dy';
 import { theme } from '../theme';
 
+// DY exige `pageLocation`. En una app nativa no hay URL, así que se usa un
+// esquema propio estable que sirva para segmentar en la consola.
 const HOME_CONTEXT: DyPageContext = {
   type: 'HOMEPAGE',
+  location: 'dydemo://home',
   data: [],
   locale: 'es_ES',
 };

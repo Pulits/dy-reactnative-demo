@@ -20,10 +20,10 @@ import type {
 /**
  * Implementación de `DyClient` que no habla con Dynamic Yield.
  *
- * Sirve para que la demo arranque y para ver, en el panel de depuración, la
- * secuencia exacta de llamadas que una integración real haría contra DY. Las
- * decisiones son deterministas (derivadas del contexto de página), no
- * personalizadas: aquí no hay motor de recomendación, solo el contrato.
+ * Se usa cuando el TurboModule del SDK no está disponible (tests, Metro sin
+ * build nativo) o cuando no hay API key configurada. Las decisiones son
+ * deterministas, no personalizadas: aquí no hay motor de recomendación, solo
+ * el contrato. La secuencia de llamadas sí es idéntica a la del adaptador real.
  */
 
 const SELECTOR_HOME_RECS = 'RN Demo — Home Recs';
@@ -31,6 +31,7 @@ const SELECTOR_PDP_RECS = 'RN Demo — PDP Similar Items';
 const SELECTOR_HOME_BANNER = 'RN Demo — Home Banner';
 
 let logSeq = 0;
+let variationSeq = 1000;
 
 const randomId = (prefix: string): string =>
   `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
@@ -51,7 +52,7 @@ const pickSkus = (seed: string, count: number, exclude?: string): string[] => {
 export const createMockDyClient = (): ObservableDyClient => {
   let config: DyConfig | null = null;
   let consentGranted = true;
-  let identity: DyIdentity = { dyid: null, dyidServer: null, sessionId: null };
+  let identity: DyIdentity = { dyid: null, sessionId: null };
   let log: DyLogEntry[] = [];
   let listeners: DyLogListener[] = [];
 
@@ -89,17 +90,20 @@ export const createMockDyClient = (): ObservableDyClient => {
       return {
         id: randomId('cmp'),
         name: selector,
+        type: 'DECISION',
         decisionId,
         variations: [
           {
-            id: randomId('var'),
+            id: ++variationSeq,
             payload: {
               type: 'CUSTOM_JSON',
-              data: {
+              // El SDK entrega los CUSTOM_JSON como cadena; se replica aquí para
+              // que `asBannerPayload` reciba lo mismo en ambos adaptadores.
+              data: JSON.stringify({
                 title: 'Envío gratis en pedidos +60 €',
                 body: 'Recíbelo en 24-48 h en península. Devoluciones sin coste durante 30 días.',
                 cta: 'Ver condiciones',
-              },
+              }),
             },
           },
         ],
@@ -116,13 +120,16 @@ export const createMockDyClient = (): ObservableDyClient => {
       return {
         id: randomId('cmp'),
         name: selector,
+        type: 'RECS_DECISION',
         decisionId,
         variations: [
           {
-            id: randomId('var'),
+            id: ++variationSeq,
             payload: {
-              type: 'RECS_DATA',
-              data: { slots: skus.map(sku => ({ sku })) },
+              type: 'RECS',
+              data: {
+                slots: skus.map(sku => ({ sku, slotId: randomId('slot') })),
+              },
             },
           },
         ],
@@ -136,12 +143,8 @@ export const createMockDyClient = (): ObservableDyClient => {
     async init(nextConfig) {
       config = nextConfig;
       consentGranted = nextConfig.consent.granted;
-      identity = {
-        dyid: randomId('dyid'),
-        dyidServer: randomId('dyids'),
-        sessionId: randomId('sess'),
-      };
-      emit('init', `SDK inicializado (${nextConfig.dataCenter})`, {
+      identity = { dyid: randomId('dyid'), sessionId: randomId('sess') };
+      emit('init', `SDK simulado inicializado (${nextConfig.dataCenter})`, {
         dataCenter: nextConfig.dataCenter,
         consent: consentGranted,
         identity,
@@ -171,7 +174,11 @@ export const createMockDyClient = (): ObservableDyClient => {
       requireInit('choose');
 
       if (request.implicitPageview) {
-        emit('pageview', `Pageview ${request.context.type} (implícito)`, request.context);
+        emit(
+          'pageview',
+          `Pageview ${request.context.type} (implícito)`,
+          request.context,
+        );
       }
 
       const choices = request.selectors
@@ -204,7 +211,7 @@ export const createMockDyClient = (): ObservableDyClient => {
 
     async trackEvent(event: DyEvent) {
       requireInit('trackEvent');
-      emit('event', `${event.name} (${event.dyType})`, event);
+      emit('event', `${event.name} (${event.kind})`, event);
     },
 
     async getRolloutFlag(selector: string): Promise<DyRolloutFlag> {

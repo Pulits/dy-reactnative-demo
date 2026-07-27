@@ -21,10 +21,14 @@ export const DY_API_KEY = 'REPLACE_WITH_YOUR_DY_CLIENT_SIDE_API_KEY';
 export const hasRealApiKey = (): boolean =>
   DY_API_KEY.length > 0 && !DY_API_KEY.startsWith('REPLACE_WITH_');
 
+/** React Native no trae los tipos de Node; solo se necesita esta parte. */
+declare const process: { env: { NODE_ENV?: string } };
+
 export const DY_CONFIG: DyConfig = {
   apiKey: DY_API_KEY,
   // 'EU' si tu sección vive en el data center europeo.
   dataCenter: 'EU',
+  locale: 'es_ES',
   // DY no persiste el consentimiento entre lanzamientos: hay que pasarlo siempre.
   consent: { granted: true },
   // En test se silencia: el volcado por consola domina el tiempo de ejecución.

@@ -5,13 +5,20 @@ import type { DyConfig, DyPageContext } from '../src/dy/types';
 const CONFIG: DyConfig = {
   apiKey: 'test-key',
   dataCenter: 'EU',
+  locale: 'es_ES',
   consent: { granted: true },
   debug: false,
 };
 
-const HOME: DyPageContext = { type: 'HOMEPAGE', data: [], locale: 'es_ES' };
+const HOME: DyPageContext = {
+  type: 'HOMEPAGE',
+  location: 'dydemo://home',
+  data: [],
+  locale: 'es_ES',
+};
 const PDP = (sku: string): DyPageContext => ({
   type: 'PRODUCT',
+  location: `dydemo://product/${sku}`,
   data: [sku],
   locale: 'es_ES',
 });
@@ -80,8 +87,8 @@ describe('DyClient (adaptador simulado)', () => {
     await client.init(CONFIG);
     await client.pageView(HOME);
     await client.trackEvent({
+      kind: 'purchase',
       name: 'Purchase',
-      dyType: 'purchase-v1',
       value: 42,
       currency: 'EUR',
       uniqueTransactionId: 'TX-1',
@@ -126,17 +133,17 @@ describe('DyClient (adaptador simulado)', () => {
 describe('validadores de payload', () => {
   it('acepta un payload de recomendaciones bien formado', () => {
     const payload = asRecommendationPayload({
-      id: 'v1',
-      payload: { type: 'RECS_DATA', data: { slots: [{ sku: 'SKU-1001' }] } },
+      id: 1,
+      payload: { type: 'RECS', data: { slots: [{ sku: 'SKU-1001' }] } },
     });
     expect(payload).toEqual({ slots: [{ sku: 'SKU-1001' }] });
   });
 
   it('descarta slots sin sku utilizable', () => {
     const payload = asRecommendationPayload({
-      id: 'v1',
+      id: 1,
       payload: {
-        type: 'RECS_DATA',
+        type: 'RECS',
         data: { slots: [{ sku: '' }, { sku: 42 }, null] },
       },
     });
@@ -146,8 +153,8 @@ describe('validadores de payload', () => {
   it('devuelve null si la plantilla de la campaña cambia de forma', () => {
     expect(
       asRecommendationPayload({
-        id: 'v1',
-        payload: { type: 'RECS_DATA', data: { productos: ['SKU-1001'] } },
+        id: 1,
+        payload: { type: 'RECS', data: { productos: ['SKU-1001'] } },
       }),
     ).toBeNull();
     expect(asRecommendationPayload(undefined)).toBeNull();
@@ -156,16 +163,64 @@ describe('validadores de payload', () => {
   it('exige título y cuerpo en el banner, y deja el cta opcional', () => {
     expect(
       asBannerPayload({
-        id: 'v1',
+        id: 1,
         payload: { type: 'CUSTOM_JSON', data: { title: 'Hola', body: 'Texto' } },
       }),
     ).toEqual({ title: 'Hola', body: 'Texto', cta: undefined });
 
     expect(
       asBannerPayload({
-        id: 'v1',
+        id: 1,
         payload: { type: 'CUSTOM_JSON', data: { title: 'Solo título' } },
       }),
     ).toBeNull();
+  });
+
+  it('parsea el CUSTOM_JSON que el SDK entrega como cadena', () => {
+    // `CustomJsonPayload.data` es `string` en el SDK, no un objeto.
+    expect(
+      asBannerPayload({
+        id: 1,
+        payload: {
+          type: 'CUSTOM_JSON',
+          data: JSON.stringify({ title: 'Hola', body: 'Texto', cta: 'Ir' }),
+        },
+      }),
+    ).toEqual({ title: 'Hola', body: 'Texto', cta: 'Ir' });
+  });
+
+  it('no revienta con una cadena que no es JSON válido', () => {
+    expect(
+      asBannerPayload({
+        id: 1,
+        payload: { type: 'CUSTOM_JSON', data: '{ esto no es json' },
+      }),
+    ).toBeNull();
+  });
+
+  it('el banner simulado usa la misma forma en cadena que el SDK real', async () => {
+    const client = createMockDyClient();
+    await client.init(CONFIG);
+
+    const { choices } = await client.choose({
+      selectors: [SELECTORS.homeBanner],
+      context: HOME,
+    });
+
+    const raw = choices[0].variations[0].payload.data;
+    expect(typeof raw).toBe('string');
+    expect(asBannerPayload(choices[0].variations[0])).not.toBeNull();
+  });
+
+  it('asigna ids de variación numéricos, como espera reportImpression', async () => {
+    const client = createMockDyClient();
+    await client.init(CONFIG);
+
+    const { choices } = await client.choose({
+      selectors: [SELECTORS.homeRecs],
+      context: HOME,
+    });
+
+    expect(typeof choices[0].variations[0].id).toBe('number');
   });
 });

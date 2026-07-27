@@ -18,7 +18,12 @@ export const ProductScreen: React.FC<{
   // En PRODUCT el contexto lleva el SKU visitado: es lo que DY usa para
   // segmentar y para alimentar las campañas de productos similares.
   const context = useMemo<DyPageContext>(
-    () => ({ type: 'PRODUCT', data: [sku], locale: 'es_ES' }),
+    () => ({
+      type: 'PRODUCT',
+      location: `dydemo://product/${sku}`,
+      data: [sku],
+      locale: 'es_ES',
+    }),
     [sku],
   );
 
@@ -35,8 +40,8 @@ export const ProductScreen: React.FC<{
   const handleAddToCart = (): void => {
     cart.add(product.sku);
     trackEvent({
+      kind: 'addToCart',
       name: 'Add to Cart',
-      dyType: 'add-to-cart-v1',
       value: product.price,
       currency: product.currency,
       productId: product.sku,

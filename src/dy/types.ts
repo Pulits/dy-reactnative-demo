@@ -1,13 +1,12 @@
 /**
  * Vocabulario de dominio de Dynamic Yield.
  *
- * Los nombres siguen la terminología de la Experience API (campaigns, selectors,
- * variations, decision id, page context), que es la misma que expone el SDK de
- * React Native. Mantener estos tipos separados del adaptador concreto permite
- * cambiar de implementación sin tocar las pantallas.
+ * Estos tipos están calcados de la API real de `@dynamicyield/react-native-sdk`
+ * (v1.5.0), pero viven aparte a propósito: las pantallas dependen de esta capa,
+ * no del SDK, así que el adaptador simulado y el nativo son intercambiables.
  */
 
-/** Tipos de página que DY reconoce para segmentar y reportar pageviews. */
+/** Espejo de `PageType` del SDK. */
 export type DyPageType =
   | 'HOMEPAGE'
   | 'CATEGORY'
@@ -18,12 +17,16 @@ export type DyPageType =
 /**
  * Contexto de la pantalla actual.
  *
- * `data` es el array de contexto que espera DY y su contenido depende de `type`:
- * en PRODUCT es el/los SKU, en CATEGORY la jerarquía de categorías, y en
- * HOMEPAGE/CART va vacío.
+ * `location` es obligatorio en el SDK (`pageLocation`): DY lo trata como la URL
+ * de la pantalla y lo usa para segmentar. En una app nativa no hay URL real, así
+ * que se usa un esquema propio estable, p.ej. `dydemo://product/SKU-1001`.
+ *
+ * `data` depende de `type`: en PRODUCT es el SKU, en CATEGORY la jerarquía de
+ * categorías, en CART los SKUs del carrito, y en HOMEPAGE va vacío.
  */
 export interface DyPageContext {
   type: DyPageType;
+  location: string;
   data: string[];
   /** Locale del usuario, p.ej. `es_ES`. */
   locale: string;
@@ -36,58 +39,68 @@ export interface DyConsent {
 }
 
 export interface DyConfig {
-  /** API key de la sección de DY (una por plataforma/entorno). */
+  /** API key **client-side** de la sección de DY. */
   apiKey: string;
-  /** Data center donde vive la sección. */
+  /** Espejo de `DataCenter` del SDK. */
   dataCenter: 'US' | 'EU';
-  /** Consentimiento inicial. DY no lo persiste entre lanzamientos de la app. */
+  /** DY no persiste el consentimiento entre lanzamientos de la app. */
   consent: DyConsent;
-  /** Envía los eventos a la consola en vez de silenciarlos. */
+  locale: string;
   debug?: boolean;
 }
 
-/** Identificadores de usuario y sesión que DY mantiene entre peticiones. */
+/**
+ * Identificadores que mantiene el SDK.
+ *
+ * Solo estos dos: `getDyId()` y `getSessionId()`. No hay equivalente móvil del
+ * `dyid_server` de la API web.
+ */
 export interface DyIdentity {
   dyid: string | null;
-  dyidServer: string | null;
   sessionId: string | null;
 }
 
 /**
- * Payload de una variación. `data` es libre por diseño: lo define la plantilla
- * de la campaña en la consola de DY, así que las pantallas deben validarlo
- * antes de usarlo (ver `asRecommendationPayload`).
+ * Variación servida por una campaña.
+ *
+ * `id` es **numérico** en el SDK, no una cadena — y es lo que espera
+ * `reportImpression`/`reportClick`.
  */
 export interface DyVariation {
-  id: string;
+  id: number;
   payload: {
+    /** Espejo de `DecisionType`: CUSTOM_JSON, RECS, SORT, SEARCH... */
     type: string;
+    /**
+     * Sin tipar a propósito. En las campañas RECS es un objeto con `slots`;
+     * en las CUSTOM_JSON el SDK lo entrega como **cadena JSON sin parsear**.
+     * Ver `payloads.ts`.
+     */
     data: unknown;
   };
+  /** Solo lo traen las variaciones de campañas de Rollout. */
+  rolloutFlag?: boolean;
 }
 
-/** Una campaña resuelta para el usuario actual. */
+/** Campaña resuelta para el usuario actual. */
 export interface DyChoice {
-  /** Id de la campaña. */
   id: string;
-  /** Nombre del selector con el que se pidió. */
   name: string;
+  /** Espejo de `ChoiceType`: DECISION, RECS_DECISION, NO_DECISION... */
+  type: string;
   variations: DyVariation[];
   /**
-   * Identifica esta decisión concreta. Hay que devolverlo al reportar
-   * impresiones y clicks para que DY atribuya el engagement a la variación.
+   * Identifica esta decisión concreta; hay que devolverlo al reportar
+   * engagement. El SDK lo declara opcional: en `NO_DECISION` no viene.
    */
-  decisionId: string;
+  decisionId?: string;
 }
 
 export interface DyChooseRequest {
   /** Nombres de los selectores/campañas a resolver. */
   selectors: string[];
   context: DyPageContext;
-  /**
-   * Si es `true`, DY registra un pageview implícito con esta petición y no hace
-   * falta llamar a `pageView` por separado.
-   */
+  /** Deja que DY registre el pageview en la misma llamada. */
   implicitPageview?: boolean;
 }
 
@@ -95,16 +108,16 @@ export interface DyChooseResult {
   choices: DyChoice[];
 }
 
-/** Evento de engagement sobre una variación ya servida. */
 export type DyEngagementType = 'IMPRESSION' | 'CLICK';
 
 export interface DyEngagement {
   type: DyEngagementType;
   decisionId: string;
-  variationIds: string[];
+  /** Ids numéricos de variación, como los espera el SDK. */
+  variationIds: number[];
 }
 
-/** Línea de carrito, tal y como la espera el evento de compra de DY. */
+/** Espejo de `CartInnerItem` del SDK. */
 export interface DyCartLine {
   productId: string;
   quantity: number;
@@ -112,13 +125,15 @@ export interface DyCartLine {
 }
 
 /**
- * Eventos de negocio. Los `dyType` son los identificadores canónicos de DY;
- * `custom` cubre cualquier evento definido en la consola.
+ * Eventos de negocio.
+ *
+ * Cada variante mapea a un método concreto de `events` en el SDK:
+ * `reportAddToCartEvent`, `reportPurchaseEvent` y `reportCustomEvent`.
  */
 export type DyEvent =
   | {
-      name: 'Add to Cart';
-      dyType: 'add-to-cart-v1';
+      kind: 'addToCart';
+      name: string;
       value: number;
       currency: string;
       productId: string;
@@ -126,21 +141,21 @@ export type DyEvent =
       cart: DyCartLine[];
     }
   | {
-      name: 'Purchase';
-      dyType: 'purchase-v1';
+      kind: 'purchase';
+      name: string;
       value: number;
       currency: string;
       uniqueTransactionId: string;
       cart: DyCartLine[];
     }
   | {
+      kind: 'custom';
       name: string;
-      dyType: 'custom';
       properties: Record<string, string | number | boolean>;
     };
 
 /**
- * Resultado de una campaña de Rollout (feature flags, SDK >= 1.4.0):
+ * Resultado de una campaña de Rollout:
  * `true` el usuario ve la feature, `false` está en el grupo de control,
  * `null` no entra en el rollout.
  */

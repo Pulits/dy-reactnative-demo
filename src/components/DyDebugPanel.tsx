@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native';
 
-import { hasRealApiKey, useDy, type DyLogEntry } from '../dy';
+import { activeClientKind, hasRealApiKey, useDy, type DyLogEntry } from '../dy';
 import { theme } from '../theme';
 
 const KIND_COLOR: Record<DyLogEntry['kind'], string> = {
@@ -52,12 +52,13 @@ export const DyDebugPanel: React.FC<{
             </Pressable>
           </View>
 
-          {!hasRealApiKey() && (
-            <Text style={styles.notice}>
-              Cliente simulado — no hay API key configurada. Sustituye
-              DY_API_KEY en src/dy/dyConfig.ts por tu clave client-side.
-            </Text>
-          )}
+          <Text style={styles.notice}>
+            Adaptador {activeClientKind()}
+            {activeClientKind() === 'simulado' &&
+              (hasRealApiKey()
+                ? ' — el SDK nativo no está disponible en este build.'
+                : ' — falta la API key. Sustituye DY_API_KEY en src/dy/dyConfig.ts por tu clave client-side.')}
+          </Text>
 
           <View style={styles.row}>
             <Text style={styles.rowLabel}>Consentimiento activo</Text>

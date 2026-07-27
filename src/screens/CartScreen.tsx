@@ -6,7 +6,12 @@ import { usePageView, useTrackEvent, type DyPageContext } from '../dy';
 import { useCart } from '../state/CartContext';
 import { theme } from '../theme';
 
-const CART_CONTEXT: DyPageContext = { type: 'CART', data: [], locale: 'es_ES' };
+const CART_CONTEXT: DyPageContext = {
+  type: 'CART',
+  location: 'dydemo://cart',
+  data: [],
+  locale: 'es_ES',
+};
 
 export const CartScreen: React.FC<{ onContinue: () => void }> = ({
   onContinue,
@@ -31,8 +36,8 @@ export const CartScreen: React.FC<{ onContinue: () => void }> = ({
     const transactionId = `TX-${Date.now()}`;
 
     trackEvent({
+      kind: 'purchase',
       name: 'Purchase',
-      dyType: 'purchase-v1',
       value: Number(cart.total.toFixed(2)),
       currency: CURRENCY,
       uniqueTransactionId: transactionId,

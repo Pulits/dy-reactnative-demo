@@ -9,7 +9,7 @@ import React, {
 } from 'react';
 
 import type { DyLogEntry, ObservableDyClient } from './DyClient';
-import { createMockDyClient } from './mockClient';
+import { createDyClient } from './createClient';
 import { DY_CONFIG } from './dyConfig';
 import type {
   DyChoice,
@@ -33,9 +33,9 @@ export const DyProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   // El cliente se crea una vez y sobrevive a los re-renders.
-  const clientRef = useRef<ObservableDyClient>();
+  const clientRef = useRef<ObservableDyClient | null>(null);
   if (!clientRef.current) {
-    clientRef.current = createMockDyClient();
+    clientRef.current = createDyClient();
   }
   const client = clientRef.current;
 
@@ -145,6 +145,10 @@ export const useChoose = (
 
   const report = useCallback(
     (type: DyEngagement['type'], choice: DyChoice) => {
+      if (!choice.decisionId) {
+        // Sin decisionId no hay nada que atribuir (p.ej. NO_DECISION).
+        return;
+      }
       client
         .reportEngagement({
           type,
