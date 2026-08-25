@@ -113,6 +113,36 @@ npm run ios         # antes: cd ios && pod install && cd ..
 
 Ver arriba cómo generar el token clásico con `read:packages`.
 
+### Si el build de Android falla resolviendo dependencias
+
+Síntoma: decenas de causas encadenadas del estilo
+
+```
+Could not resolve org.jetbrains.kotlin:kotlin-gradle-plugin:1.3.72.
+> Could not GET 'https://jcenter.bintray.com/.../kotlin-gradle-plugin-1.3.72.pom'.
+   > SSLHandshakeException: PKIX path building failed
+```
+
+jcenter cerró en 2021 y su dominio ya ni sirve un certificado válido, de ahí el
+error de SSL en vez de un 404. Este repo no lo declara en ninguna parte: lo
+arrastra alguna librería autolinkeada que todavía lleva `jcenter()` en su propio
+`build.gradle`. `android/build.gradle` antepone ahora `google()` y
+`mavenCentral()` a todos los proyectos del build, así que esas coordenadas
+antiguas se resuelven desde donde siguen publicadas y jcenter no llega a usarse.
+
+Si el error persiste, comprueba **con qué Gradle y qué JDK** estás compilando:
+el proyecto necesita el wrapper (Gradle 8.14.3) y **JDK 17+**. Una traza con
+`sun.security.ssl.Handshaker`, `Thread.java:748` o `DefaultGradleLauncher` viene
+de un JDK 8 y un Gradle 6 —el que trae de serie un Android Studio viejo—, no del
+wrapper de este repo.
+
+```sh
+cd android
+./gradlew --stop            # mata daemons antiguos que cachean la config mala
+./gradlew -version          # Gradle 8.14.3, JVM 17+
+./gradlew :app:assembleDebug --refresh-dependencies
+```
+
 ## Comprobaciones
 
 ```sh

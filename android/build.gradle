@@ -19,3 +19,46 @@ buildscript {
 }
 
 apply plugin: "com.facebook.react.rootproject"
+
+/**
+ * Repositorios para todos los proyectos, incluidas las librerías autolinkeadas.
+ *
+ * jcenter cerró en 2021 y su dominio ya ni siquiera sirve un certificado válido,
+ * así que un build que lo declare no falla con un 404 sino con un
+ * `SSLHandshakeException: PKIX path building failed` al intentar bajar cualquier
+ * POM. Varias librerías de React Native todavía arrastran `jcenter()` (y un AGP
+ * o un Kotlin de la época) en su propio `build.gradle`, y al autolinkearse pasan
+ * a formar parte de este build: su configuración es la que rompe la resolución,
+ * aunque este repo no mencione jcenter en ningún sitio.
+ *
+ * Anteponer google() y mavenCentral() a cada proyecto hace que esas coordenadas
+ * antiguas se resuelvan desde donde siguen publicadas —AGP en google(), el
+ * plugin de Kotlin en mavenCentral()— antes de llegar al repo muerto.
+ */
+allprojects { project ->
+    project.buildscript.repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+
+    project.repositories {
+        google()
+        mavenCentral()
+    }
+
+    // Los repos que declare la librería se añaden al evaluarla, después de este
+    // bloque; para las dependencias (no para el classpath del buildscript, que
+    // ya está resuelto) todavía llegamos a tiempo de quitar los muertos y
+    // ahorrarnos el timeout de SSL contra un dominio que no va a responder.
+    project.afterEvaluate {
+        def dead = project.repositories.findAll { repo ->
+            repo instanceof MavenArtifactRepository &&
+                repo.url.host in ['jcenter.bintray.com', 'dl.bintray.com', 'maven.bintray.com']
+        }
+        dead.each { repo ->
+            logger.info("Ignorando repositorio dado de baja: ${repo.url}")
+            project.repositories.remove(repo)
+        }
+    }
+}
