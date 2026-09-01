@@ -23,3 +23,26 @@ jest.mock('react-native-safe-area-context', () => {
     initialWindowMetrics: { insets, frame },
   };
 });
+
+/**
+ * Las animaciones de `motion.tsx` usan `useNativeDriver`, que al arrancar pide
+ * el handle de la vista al renderer. En Jest ese renderer se desmonta al acabar
+ * cada test, y una animación con `delay` cuyo timer salta después lanza un
+ * `Cannot read properties of undefined (reading 'findNodeHandle')` fuera de
+ * cualquier `it()`: no tumba la suite, pero mata el proceso worker y ensucia la
+ * salida. Desactivando el driver nativo, `Animated` se queda en JS y no toca el
+ * renderer.
+ */
+jest.mock('react-native/src/private/animated/NativeAnimatedHelper', () => ({
+  __esModule: true,
+  default: {
+    API: new Proxy({}, { get: () => () => {} }),
+    generateNewNodeTag: () => 0,
+    generateNewAnimationId: () => 0,
+    assertNativeAnimatedModule: () => {},
+    shouldUseNativeDriver: () => false,
+    transformDataType: value => value,
+    addWhitelistedStyleProp: () => {},
+  },
+  shouldUseNativeDriver: () => false,
+}));

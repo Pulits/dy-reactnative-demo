@@ -98,6 +98,11 @@ clon recién hecho **no lo tiene**. Sin él, `npm install` busca
 `@dynamicyield/react-native-sdk` en el npm público y falla con un 404
 engañoso: el paquete existe, pero solo en GitHub Packages.
 
+No hay atajo: Metro resuelve el `require` de `createClient.ts` en tiempo de
+empaquetado, aunque en ejecución esa rama no se llegue a tomar. Sin el paquete
+instalado no hay bundle, ni con el adaptador simulado. El token hace falta antes
+de todo lo demás.
+
 ```sh
 cat > .npmrc <<'EOF'
 @dynamicyield:registry=https://npm.pkg.github.com/
