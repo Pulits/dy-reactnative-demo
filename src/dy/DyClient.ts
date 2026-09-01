@@ -1,74 +1,160 @@
+/**
+ * Frontera con el SDK de Dynamic Yield.
+ *
+ * Cada método mapea 1:1 con una llamada del SDK y no interpreta nada: el
+ * parseo de payloads y la elección de selectores viven en `DyService`. Así el
+ * adaptador nativo se limita a traducir tipos, y el simulado a devolver datos
+ * con la misma forma.
+ */
+
 import type {
+  DyAssistantResult,
+  DyCartLine,
   DyChooseRequest,
   DyChooseResult,
   DyConfig,
-  DyEngagement,
-  DyEvent,
-  DyIdentity,
-  DyPageContext,
-  DyRolloutFlag,
+  DyEventValue,
+  DyPage,
+  DyResult,
+  DySearchFilter,
+  DySearchResult,
 } from './types';
 
-/**
- * Contrato único contra el que programan las pantallas.
- *
- * Existe para que la app no dependa directamente de
- * `@dynamicyield/react-native-sdk`: hoy corre sobre `createMockDyClient`, y el
- * día que el paquete esté instalado basta con añadir un adaptador que implemente
- * esta interfaz y cambiarlo en `src/dy/index.ts`. Las pantallas no se tocan.
- *
- * El orden de llamadas en una integración típica es:
- *   init -> pageView (o choose con implicitPageview) -> reportEngagement -> trackEvent
- */
 export interface DyClient {
-  /** Arranca el SDK. Debe llamarse una sola vez, antes que cualquier otro método. */
-  init(config: DyConfig): Promise<void>;
+  // ---- Ciclo de vida e identidad -------------------------------------------
+
+  initialize(config: DyConfig): Promise<void>;
+
+  /** El dyid que asignó DY. Vacío hasta el primer Choose. */
+  getDyId(): Promise<string>;
+
+  getSessionId(): Promise<string>;
 
   /**
-   * Actualiza el consentimiento en caliente. Solo aplica a la sesión actual:
-   * DY no lo persiste, hay que volver a pasarlo en cada arranque de la app.
+   * Borra dyid y sesión locales. El servidor no asigna los nuevos hasta la
+   * siguiente llamada a Choose: un pageview no sirve, exige una sesión ya
+   * válida y responde 422 justo después del reset.
    */
-  setConsent(granted: boolean): Promise<void>;
+  resetUserIdAndSessionId(): Promise<void>;
 
-  /** Identificadores actuales de usuario y sesión. Útil para depurar. */
-  getIdentity(): DyIdentity;
+  setActiveConsentAccepted(accepted: boolean): Promise<void>;
 
-  /** Reporta la visualización de una pantalla. */
-  pageView(context: DyPageContext): Promise<void>;
+  // ---- Pageviews ------------------------------------------------------------
 
-  /** Resuelve una o varias campañas para el usuario actual. */
-  choose(request: DyChooseRequest): Promise<DyChooseResult>;
+  reportHomePageView(location: string): Promise<DyResult>;
+  reportCategoryPageView(
+    location: string,
+    categories: string[],
+  ): Promise<DyResult>;
+  reportProductPageView(location: string, sku: string): Promise<DyResult>;
+  reportCartPageView(location: string, cart: string[]): Promise<DyResult>;
+  reportOtherPageView(location: string, data: string): Promise<DyResult>;
 
-  /**
-   * Reporta impresión o click sobre una variación servida. Sin esto DY no puede
-   * atribuir el engagement y las métricas de la campaña quedan vacías.
-   */
-  reportEngagement(engagement: DyEngagement): Promise<void>;
+  // ---- Choose ---------------------------------------------------------------
 
-  /** Reporta un evento de negocio (add to cart, compra, o uno custom). */
-  trackEvent(event: DyEvent): Promise<void>;
+  chooseVariations(request: DyChooseRequest): Promise<DyChooseResult>;
 
-  /** Lee el flag de una campaña de Rollout. */
-  getRolloutFlag(selector: string): Promise<DyRolloutFlag>;
-}
+  // ---- Eventos --------------------------------------------------------------
 
-/**
- * Entrada del registro de actividad. No forma parte de la integración con DY:
- * alimenta el panel de depuración de la demo para poder ver qué se enviaría.
- */
-export interface DyLogEntry {
-  id: number;
-  at: number;
-  kind: 'init' | 'consent' | 'pageview' | 'choose' | 'engagement' | 'event';
-  summary: string;
-  detail: unknown;
-}
+  reportAddToCart(args: {
+    eventName: string;
+    value: number;
+    currency: string;
+    productId: string;
+    quantity: number;
+    cart: DyCartLine[];
+  }): Promise<DyResult>;
 
-export type DyLogListener = (entries: DyLogEntry[]) => void;
+  reportRemoveFromCart(args: {
+    eventName: string;
+    value: number;
+    currency: string;
+    productId: string;
+    quantity: number;
+    cart: DyCartLine[];
+  }): Promise<DyResult>;
 
-/** Cliente instrumentado que además expone lo que ha ido enviando. */
-export interface ObservableDyClient extends DyClient {
-  getLog(): DyLogEntry[];
-  subscribe(listener: DyLogListener): () => void;
-  clearLog(): void;
+  reportSyncCart(args: {
+    eventName: string;
+    value: number;
+    currency: string;
+    cart: DyCartLine[];
+  }): Promise<DyResult>;
+
+  reportPurchase(args: {
+    eventName: string;
+    value: number;
+    currency: string;
+    /** Para que DY deduplique la compra si se reintenta. */
+    uniqueTransactionId: string;
+    cart: DyCartLine[];
+  }): Promise<DyResult>;
+
+  reportAddToWishlist(args: {
+    eventName: string;
+    productId: string;
+  }): Promise<DyResult>;
+
+  reportKeywordSearch(args: {
+    eventName: string;
+    keywords: string;
+  }): Promise<DyResult>;
+
+  reportLogin(args: {
+    eventName: string;
+    cuidType: string;
+    cuid: string;
+  }): Promise<DyResult>;
+
+  reportCustomEvent(args: {
+    eventName: string;
+    properties: Record<string, DyEventValue>;
+  }): Promise<DyResult>;
+
+  // ---- Engagement -----------------------------------------------------------
+
+  /** Click sobre un slot concreto de una campaña de recomendaciones. */
+  reportSlotClick(args: {
+    variationId?: number;
+    slotId: string;
+  }): Promise<DyResult>;
+
+  /** Click sobre una decisión sin slot (campañas de contenido). */
+  reportClick(args: {
+    decisionId: string;
+    variationId?: number;
+  }): Promise<DyResult>;
+
+  reportSlotsImpression(args: {
+    variationId?: number;
+    slotIds: string[];
+  }): Promise<DyResult>;
+
+  // ---- Shopping Muse --------------------------------------------------------
+
+  chatWithAssistant(args: {
+    page: DyPage;
+    text: string;
+    /** Se reenvía para mantener el contexto de la conversación. */
+    chatId?: string;
+    /** `false` trae el producto completo del feed, no solo el SKU. */
+    skusOnly: boolean;
+  }): Promise<DyAssistantResult>;
+
+  // ---- Experience Search ----------------------------------------------------
+
+  semanticSearch(args: {
+    page: DyPage;
+    text: string;
+    filters?: DySearchFilter[];
+    numItems: number;
+    offset: number;
+    enableSpellCheck: boolean;
+  }): Promise<DySearchResult>;
+
+  /** Búsqueda visual. La imagen va en base64 **sin** el prefijo `data:`. */
+  visualSearch(args: {
+    page: DyPage;
+    imageBase64: string;
+  }): Promise<DySearchResult>;
 }

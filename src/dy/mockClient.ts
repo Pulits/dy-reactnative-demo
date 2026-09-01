@@ -1,263 +1,423 @@
-import { CATALOG, bySku } from '../catalog';
-import type {
-  DyClient,
-  DyLogEntry,
-  DyLogListener,
-  ObservableDyClient,
-} from './DyClient';
-import type {
-  DyChooseRequest,
-  DyChooseResult,
-  DyChoice,
-  DyConfig,
-  DyEngagement,
-  DyEvent,
-  DyIdentity,
-  DyPageContext,
-  DyRolloutFlag,
-} from './types';
-
 /**
- * Implementación de `DyClient` que no habla con Dynamic Yield.
+ * Adaptador simulado.
  *
- * Se usa cuando el TurboModule del SDK no está disponible (tests, Metro sin
- * build nativo) o cuando no hay API key configurada. Las decisiones son
- * deterministas, no personalizadas: aquí no hay motor de recomendación, solo
- * el contrato. La secuencia de llamadas sí es idéntica a la del adaptador real.
+ * Devuelve respuestas con la **misma forma** que el SDK real —mismos nombres de
+ * campo, `custom` como cadena JSON sin parsear, ids de variación numéricos— para
+ * que `DyService` corra exactamente el mismo código en ambos casos. Si el mock
+ * "arreglara" la forma, los tests dejarían de cubrir el parseo de verdad.
+ *
+ * Los productos salen del catálogo local; los selectores son los mismos nombres
+ * que en la sección real.
  */
 
-const SELECTOR_HOME_RECS = 'RN Demo — Home Recs';
-const SELECTOR_PDP_RECS = 'RN Demo — PDP Similar Items';
-const SELECTOR_HOME_BANNER = 'RN Demo — Home Banner';
+import { appConfig } from '../config/appConfig';
+import { CATALOG } from '../catalog';
+import type { Product } from '../models';
+import type { DyClient } from './DyClient';
+import type {
+  DyAssistantResult,
+  DyChooseRequest,
+  DyChooseResult,
+  DyConfig,
+  DyPage,
+  DyResult,
+  DySearchResult,
+  DySlot,
+} from './types';
 
-let logSeq = 0;
-let variationSeq = 1000;
+const OK: DyResult = { status: 'success' };
 
-const randomId = (prefix: string): string =>
-  `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
+/** Un slot con la forma exacta que devuelve el feed. */
+const slotOf = (product: Product, index: number): DySlot => ({
+  slotId: `slot-${product.id}-${index}`,
+  productData: {
+    groupId: product.id,
+    name: product.name,
+    // El feed puede mandar el precio como cadena; se alterna para ejercitarlo.
+    price: index % 2 === 0 ? product.price : String(product.price),
+    imageUrl: product.imageUrl,
+    categories: [product.category],
+    inStock: product.inStock,
+    extra: {
+      sku: product.sku,
+      description: product.description ?? '',
+      'type:number:rating': product.rating ?? 4.5,
+      'type:number:reviews': product.reviewCount ?? 128,
+      details: product.description ?? '',
+      size_and_fit: 'True to size. Model is 1.80 m and wears size M.',
+      delivery_and_returns: 'Free delivery over $50. Returns within 30 days.',
+      material: '100% cotton.',
+    },
+  },
+});
 
-/** Rota el catálogo a partir de una semilla para que cada contexto dé un set distinto. */
-const pickSkus = (seed: string, count: number, exclude?: string): string[] => {
-  const pool = CATALOG.filter(product => product.sku !== exclude);
-  const offset =
-    Math.abs(
-      Array.from(seed).reduce((acc, char) => acc * 31 + char.charCodeAt(0), 7),
-    ) % Math.max(pool.length, 1);
-
-  return Array.from({ length: Math.min(count, pool.length) }, (_, index) => {
-    return pool[(offset + index) % pool.length].sku;
-  });
-};
-
-export const createMockDyClient = (): ObservableDyClient => {
-  let config: DyConfig | null = null;
-  let consentGranted = true;
-  let identity: DyIdentity = { dyid: null, sessionId: null };
-  let log: DyLogEntry[] = [];
-  let listeners: DyLogListener[] = [];
-
-  const emit = (
-    kind: DyLogEntry['kind'],
-    summary: string,
-    detail: unknown,
-  ): void => {
-    log = [
-      ...log,
-      { id: ++logSeq, at: Date.now(), kind, summary, detail },
-    ].slice(-60);
-
-    if (config?.debug) {
-      console.log(`[dy] ${kind}: ${summary}`, detail);
-    }
-    listeners.forEach(listener => listener(log));
-  };
-
-  const requireInit = (method: string): void => {
-    if (!config) {
-      throw new Error(
-        `DyClient.${method} llamado antes de init(). Envuelve la app en <DyProvider>.`,
-      );
-    }
-  };
-
-  const buildChoice = (
-    selector: string,
-    context: DyPageContext,
-  ): DyChoice | null => {
-    const decisionId = randomId('dec');
-
-    if (selector === SELECTOR_HOME_BANNER) {
-      return {
-        id: randomId('cmp'),
-        name: selector,
-        type: 'DECISION',
-        decisionId,
-        variations: [
-          {
-            id: ++variationSeq,
-            payload: {
-              type: 'CUSTOM_JSON',
-              // El SDK entrega los CUSTOM_JSON como cadena; se replica aquí para
-              // que `asBannerPayload` reciba lo mismo en ambos adaptadores.
-              data: JSON.stringify({
-                eyebrow: 'Solo esta semana',
-                title: 'Envío gratis en pedidos +60 €',
-                body: 'Recíbelo en 24-48 h en península. Devoluciones sin coste durante 30 días.',
-                cta: 'Ver condiciones',
-              }),
+const recsChoice = (
+  name: string,
+  products: Product[],
+  custom: Record<string, string>,
+  variationId: number,
+): DyChooseResult => ({
+  status: 'success',
+  choices: [
+    {
+      name,
+      variations: [
+        {
+          id: variationId,
+          decisionId: `decision-${name.replace(/\s+/g, '-').toLowerCase()}`,
+          payload: {
+            type: 'RECS',
+            data: {
+              slots: products.map(slotOf),
+              // Sin parsear, igual que el SDK.
+              custom: JSON.stringify(custom),
             },
           },
-        ],
-      };
+        },
+      ],
+    },
+  ],
+});
+
+const customJsonChoice = (
+  name: string,
+  payload: Record<string, unknown>,
+  variationId: number,
+): DyChooseResult => ({
+  status: 'success',
+  choices: [
+    {
+      name,
+      variations: [
+        {
+          id: variationId,
+          decisionId: `decision-${name.replace(/\s+/g, '-').toLowerCase()}`,
+          // El SDK entrega CUSTOM_JSON como cadena, no como objeto.
+          payload: { type: 'CUSTOM_JSON', data: JSON.stringify(payload) },
+        },
+      ],
+    },
+  ],
+});
+
+/** Sin campaña: el usuario no entra (control o segmentación). No es un error. */
+const NO_DECISION: DyChooseResult = { status: 'success', choices: [] };
+
+const byCategory = (category: string): Product[] =>
+  CATALOG.filter(p => p.category === category);
+
+const pick = (products: Product[], count: number): Product[] =>
+  products.slice(0, count);
+
+export const createMockClient = (): DyClient => {
+  let dyid = '';
+  let sessionId = '';
+  let initialized = false;
+
+  const newId = (prefix: string): string =>
+    `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+
+  const chooseVariations = async (
+    request: DyChooseRequest,
+  ): Promise<DyChooseResult> => {
+    // El primer Choose es el que hace que DY asigne dyid y sesión.
+    if (!dyid) {
+      dyid = newId('dyid');
+      sessionId = newId('session');
     }
 
-    if (selector === SELECTOR_HOME_RECS || selector === SELECTOR_PDP_RECS) {
-      // En PRODUCT, `context.data[0]` es el SKU visitado: se excluye de sus propios similares.
-      const currentSku =
-        context.type === 'PRODUCT' ? context.data[0] : undefined;
-      const seed = `${selector}|${context.type}|${context.data.join(',')}`;
-      const skus = pickSkus(seed, 4, currentSku);
+    const selector = request.selectorNames[0];
+    const S = appConfig.selectors;
 
-      return {
-        id: randomId('cmp'),
-        name: selector,
-        type: 'RECS_DECISION',
-        decisionId,
-        variations: [
+    switch (selector) {
+      case S.homeRecs:
+        return recsChoice(
+          selector,
+          pick(CATALOG, 8),
           {
-            id: ++variationSeq,
-            payload: {
-              type: 'RECS',
-              // Misma forma que devuelve DY con recsProductData.skusOnly=false:
-              // los nombres de campo son los del feed (image_url, in_stock).
-              data: {
-                slots: skus.map(sku => {
-                  const product = bySku(sku);
-                  return {
-                    sku,
-                    slotId: randomId('slot'),
-                    productData: {
-                      name: product?.name,
-                      price: product?.price,
-                      brand: product?.brand,
-                      image_url: product?.imageUrl,
-                      in_stock: product?.inStock,
-                      categories: product ? [product.category] : undefined,
-                    },
-                  };
-                }),
-              },
-            },
+            title: 'Recommended for you',
+            subtitle: 'Picked from your activity',
           },
-        ],
-      };
-    }
+          101,
+        );
 
-    return null;
-  };
+      case S.pdpRecs:
+        return recsChoice(
+          selector,
+          pick(CATALOG, 6),
+          { title: 'You may also like' },
+          102,
+        );
 
-  const client: DyClient = {
-    async init(nextConfig) {
-      config = nextConfig;
-      consentGranted = nextConfig.consent.granted;
-      identity = { dyid: randomId('dyid'), sessionId: randomId('sess') };
-      emit('init', `SDK simulado inicializado (${nextConfig.dataCenter})`, {
-        dataCenter: nextConfig.dataCenter,
-        consent: consentGranted,
-        identity,
-      });
-    },
+      case S.cartRecs:
+        return recsChoice(
+          selector,
+          pick(CATALOG, 6),
+          { title: 'Complete your order' },
+          103,
+        );
 
-    async setConsent(granted) {
-      requireInit('setConsent');
-      consentGranted = granted;
-      emit(
-        'consent',
-        granted ? 'Consentimiento concedido' : 'Consentimiento denegado',
-        { granted },
-      );
-    },
+      case S.searchOverlayRecs:
+        return recsChoice(
+          selector,
+          pick(CATALOG, 4),
+          { title: 'Most popular' },
+          104,
+        );
 
-    getIdentity() {
-      return identity;
-    },
+      case S.singleProduct:
+        return recsChoice(selector, pick(CATALOG, 1), {}, 105);
 
-    async pageView(context) {
-      requireInit('pageView');
-      emit('pageview', `Pageview ${context.type}`, context);
-    },
-
-    async choose(request: DyChooseRequest): Promise<DyChooseResult> {
-      requireInit('choose');
-
-      if (request.implicitPageview) {
-        emit(
-          'pageview',
-          `Pageview ${request.context.type} (implícito)`,
-          request.context,
+      case S.mostPopularInCategory:
+      case S.mostAffinityInCategory: {
+        const category = request.page.data[0] ?? '';
+        return recsChoice(
+          selector,
+          pick(byCategory(category), 6),
+          {
+            title:
+              selector === S.mostAffinityInCategory
+                ? 'Best for you'
+                : `Most popular in ${category}`,
+          },
+          selector === S.mostAffinityInCategory ? 107 : 106,
         );
       }
 
-      const choices = request.selectors
-        .map(selector => buildChoice(selector, request.context))
-        .filter((choice): choice is DyChoice => choice !== null);
+      case S.museHome:
+        return recsChoice(
+          selector,
+          pick(CATALOG, 8),
+          {
+            musename: 'Blueberry Muse',
+            searchplaceholder: 'What are you looking for?',
+            suggestedsearch1: 'Date night look',
+            suggestedsearch2: 'Trending handbags',
+            suggestedsearch3: 'Spring style event',
+            suggestedsearch4: 'Sleek and chic',
+          },
+          108,
+        );
 
-      emit(
-        'choose',
-        `choose(${request.selectors.length}) -> ${choices.length} campaña(s)`,
-        {
-          selectors: request.selectors,
-          context: request.context,
-          // Sin consentimiento DY sigue sirviendo campañas, pero no personalizadas.
-          personalized: consentGranted,
-          decisionIds: choices.map(choice => choice.decisionId),
-        },
-      );
+      case S.heroBanner:
+        return customJsonChoice(
+          selector,
+          {
+            image: 'https://picsum.photos/seed/blueberry-hero/1200/800',
+            maintext: 'New Season Collection',
+            subtext: 'Discover the latest trends and exclusive styles',
+            buttonCta: 'Shop Women',
+            category: 'Women',
+            fontcolor: '#ffffff',
+          },
+          201,
+        );
 
-      return { choices };
-    },
+      case S.socialProof:
+        return customJsonChoice(
+          selector,
+          {
+            highlightedtext: 'Going fast!',
+            text: 'people bought this item last week',
+            // Aquí llega como número: el parseo tiene que aguantar ambos.
+            performance: 47,
+          },
+          202,
+        );
 
-    async reportEngagement(engagement: DyEngagement) {
-      requireInit('reportEngagement');
-      emit(
-        'engagement',
-        `${engagement.type} sobre ${engagement.variationIds.length} variación(es)`,
-        engagement,
-      );
-    },
-
-    async trackEvent(event: DyEvent) {
-      requireInit('trackEvent');
-      emit('event', `${event.name} (${event.kind})`, event);
-    },
-
-    async getRolloutFlag(selector: string): Promise<DyRolloutFlag> {
-      requireInit('getRolloutFlag');
-      // Determinista por selector para que la demo sea reproducible.
-      const flag = selector.length % 2 === 0;
-      emit('choose', `Rollout "${selector}" -> ${flag}`, { selector, flag });
-      return flag;
-    },
+      default: {
+        const bannerIndex = S.homeBanners.indexOf(
+          selector as (typeof S.homeBanners)[number],
+        );
+        if (bannerIndex >= 0) {
+          const category = ['Women', 'Men', 'Kids', 'Beauty'][bannerIndex];
+          return customJsonChoice(
+            selector,
+            {
+              image: `https://picsum.photos/seed/blueberry-banner-${bannerIndex}/800/600`,
+              title: `${category} edit`,
+              subtitle: 'Curated for the season',
+              category,
+            },
+            210 + bannerIndex,
+          );
+        }
+        return NO_DECISION;
+      }
+    }
   };
 
+  const assistantSlots = (products: Product[]): DySlot[] =>
+    products.map(slotOf);
+
   return {
-    ...client,
-    getLog: () => log,
-    clearLog: () => {
-      log = [];
-      listeners.forEach(listener => listener(log));
+    async initialize(_config: DyConfig): Promise<void> {
+      initialized = true;
     },
-    subscribe: (listener: DyLogListener) => {
-      listeners = [...listeners, listener];
-      return () => {
-        listeners = listeners.filter(current => current !== listener);
+
+    async getDyId(): Promise<string> {
+      return dyid;
+    },
+
+    async getSessionId(): Promise<string> {
+      return sessionId;
+    },
+
+    async resetUserIdAndSessionId(): Promise<void> {
+      // Igual que el SDK: se borran, y el siguiente Choose asigna los nuevos.
+      dyid = '';
+      sessionId = '';
+    },
+
+    async setActiveConsentAccepted(_accepted: boolean): Promise<void> {},
+
+    async reportHomePageView(_location: string): Promise<DyResult> {
+      return initialized ? OK : { status: 'error' };
+    },
+    async reportCategoryPageView(): Promise<DyResult> {
+      return OK;
+    },
+    async reportProductPageView(): Promise<DyResult> {
+      return OK;
+    },
+    async reportCartPageView(): Promise<DyResult> {
+      return OK;
+    },
+    async reportOtherPageView(): Promise<DyResult> {
+      return OK;
+    },
+
+    chooseVariations,
+
+    async reportAddToCart(): Promise<DyResult> {
+      return OK;
+    },
+    async reportRemoveFromCart(): Promise<DyResult> {
+      return OK;
+    },
+    async reportSyncCart(): Promise<DyResult> {
+      return OK;
+    },
+    async reportPurchase(): Promise<DyResult> {
+      return OK;
+    },
+    async reportAddToWishlist(): Promise<DyResult> {
+      return OK;
+    },
+    async reportKeywordSearch(): Promise<DyResult> {
+      return OK;
+    },
+    async reportLogin(): Promise<DyResult> {
+      return OK;
+    },
+    async reportCustomEvent(): Promise<DyResult> {
+      return OK;
+    },
+
+    async reportSlotClick(): Promise<DyResult> {
+      return OK;
+    },
+    async reportClick(): Promise<DyResult> {
+      return OK;
+    },
+    async reportSlotsImpression(): Promise<DyResult> {
+      return OK;
+    },
+
+    async chatWithAssistant(args: {
+      page: DyPage;
+      text: string;
+      chatId?: string;
+    }): Promise<DyAssistantResult> {
+      const isSupport =
+        /refund|return policy|support|help me with my order/i.test(args.text);
+      return {
+        status: 'success',
+        choices: [
+          {
+            variations: [
+              {
+                id: 301,
+                decisionId: 'decision-assistant',
+                payload: {
+                  data: {
+                    assistant: isSupport
+                      ? `<p>${appConfig.muse.supportMessage}</p>`
+                      : `<p>Here are a few looks for <b>${args.text}</b>.</p>`,
+                    support: isSupport,
+                    chatId: args.chatId ?? newId('chat'),
+                    widgets: isSupport
+                      ? []
+                      : [
+                          {
+                            title: 'The look',
+                            slots: assistantSlots(pick(CATALOG, 4)),
+                          },
+                          {
+                            title: 'Pairs well with',
+                            slots: assistantSlots(CATALOG.slice(4, 8)),
+                          },
+                        ],
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      };
+    },
+
+    async semanticSearch(args: {
+      text: string;
+      numItems: number;
+    }): Promise<DySearchResult> {
+      const query = args.text.toLowerCase();
+      const matches = CATALOG.filter(
+        p =>
+          p.name.toLowerCase().includes(query) ||
+          p.category.toLowerCase().includes(query),
+      );
+      const products = matches.length ? matches : pick(CATALOG, 6);
+
+      return {
+        status: 'success',
+        choice: {
+          variations: [
+            {
+              id: 401,
+              decisionId: 'decision-search',
+              payload: {
+                data: {
+                  slots: products.slice(0, args.numItems).map(slotOf),
+                  // Simula el spellcheck cuando no hubo coincidencias.
+                  spellCheckedQuery: matches.length ? args.text : 'dress',
+                  totalNumResults: products.length,
+                },
+              },
+            },
+          ],
+        },
+      };
+    },
+
+    async visualSearch(): Promise<DySearchResult> {
+      return {
+        status: 'success',
+        choice: {
+          variations: [
+            {
+              id: 402,
+              decisionId: 'decision-visual-search',
+              payload: {
+                data: {
+                  slots: pick(CATALOG, 6).map(slotOf),
+                  totalNumResults: 6,
+                },
+              },
+            },
+          ],
+        },
       };
     },
   };
 };
-
-export const SELECTORS = {
-  homeRecs: SELECTOR_HOME_RECS,
-  pdpRecs: SELECTOR_PDP_RECS,
-  homeBanner: SELECTOR_HOME_BANNER,
-} as const;

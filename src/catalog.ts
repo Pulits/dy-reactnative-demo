@@ -1,169 +1,183 @@
-import type { DyProductData } from './dy';
-
 /**
- * Catálogo local de la demo.
+ * Catálogo de la demo.
  *
- * Cuando DY devuelve recomendaciones con `skusOnly: false`, los datos de
- * producto (nombre, precio, imagen) vienen del feed de DY y este catálogo solo
- * actúa de respaldo. Con `skusOnly: true` DY devuelve solo el SKU y es la
- * tienda quien resuelve el resto — que es el papel que cumple aquí.
+ * Solo lo usa el adaptador simulado. En la app real los productos vienen
+ * enteros del feed de Dynamic Yield (`recsProductData: { skusOnly: false }`) y
+ * no hay catálogo local: `ProductService` de la app de iOS devuelve una lista
+ * vacía a propósito.
  */
-export interface Product {
-  sku: string;
-  name: string;
-  category: string;
-  brand: string;
-  price: number;
-  currency: string;
-  imageUrl?: string;
-  description: string;
-  inStock: boolean;
-}
 
-export const CURRENCY = 'EUR';
+import type { Product } from './models';
 
 export const CATALOG: Product[] = [
   {
-    sku: 'SKU-1001',
-    name: 'Zapatilla Trail Alpina',
-    category: 'Calzado',
-    brand: 'Sendero',
-    price: 129.9,
-    currency: CURRENCY,
-    inStock: true,
+    id: '1626678952045',
+    sku: 'wd01',
+    name: 'Silk Slip Midi Dress',
+    price: 189,
+    category: 'Women',
+    imageUrl: 'https://picsum.photos/seed/blueberry-wd01/600/800',
     description:
-      'Suela de agarre mixto para roca y barro, con drop de 8 mm y refuerzo en la puntera.',
+      'Bias-cut silk with a cowl neck and adjustable straps. Falls just below the knee.',
+    inStock: true,
+    rating: 4.7,
+    reviewCount: 214,
   },
   {
-    sku: 'SKU-1002',
-    name: 'Chaqueta Cortavientos Nimbo',
-    category: 'Abrigo',
-    brand: 'Sendero',
-    price: 89.0,
-    currency: CURRENCY,
-    inStock: true,
+    id: '1626678952046',
+    sku: 'wb02',
+    name: 'Structured Leather Tote',
+    price: 340,
+    category: 'Women',
+    imageUrl: 'https://picsum.photos/seed/blueberry-wb02/600/800',
     description:
-      'Tejido de 20 denieres plegable en su propio bolsillo. Costuras selladas.',
+      'Full-grain leather with a suede lining and a detachable zip pouch.',
+    inStock: true,
+    rating: 4.8,
+    reviewCount: 96,
   },
   {
-    sku: 'SKU-1003',
-    name: 'Mochila Ligera 22L',
-    category: 'Accesorios',
-    brand: 'Cima',
-    price: 74.5,
-    currency: CURRENCY,
+    id: '1626678952047',
+    sku: 'ws09',
+    name: 'Leather Court Sneaker',
+    price: 145,
+    category: 'Women',
+    imageUrl: 'https://picsum.photos/seed/blueberry-ws09/600/800',
+    description: 'Minimal court silhouette on a cupsole, with a padded collar.',
     inStock: true,
-    description:
-      'Espalda ventilada y compartimento para bolsa de hidratación de 2 L.',
+    rating: 4.5,
+    reviewCount: 331,
   },
   {
-    sku: 'SKU-1004',
-    name: 'Camiseta Técnica Merino',
-    category: 'Camisetas',
-    brand: 'Sendero',
-    price: 59.0,
-    currency: CURRENCY,
-    inStock: true,
-    description:
-      'Lana merina de 160 g/m², termorreguladora y sin costuras laterales.',
-  },
-  {
-    sku: 'SKU-1005',
-    name: 'Bastones Plegables Carbono',
-    category: 'Accesorios',
-    brand: 'Cima',
-    price: 110.0,
-    currency: CURRENCY,
+    id: '1626678952048',
+    sku: 'wj04',
+    name: 'Cropped Wool Blazer',
+    price: 275,
+    category: 'Women',
+    imageUrl: 'https://picsum.photos/seed/blueberry-wj04/600/800',
+    description: 'Double-faced wool with a boxy shoulder and a single button.',
     inStock: false,
-    description:
-      'Plegado en Z, 168 g por bastón, empuñadura de corcho natural.',
+    rating: 4.4,
+    reviewCount: 58,
   },
   {
-    sku: 'SKU-1006',
-    name: 'Pantalón Convertible Sierra',
-    category: 'Pantalones',
-    brand: 'Sendero',
-    price: 95.0,
-    currency: CURRENCY,
+    id: '1626678952049',
+    sku: 'ms03',
+    name: 'Oxford Cotton Shirt',
+    price: 95,
+    category: 'Men',
+    imageUrl: 'https://picsum.photos/seed/blueberry-ms03/600/800',
+    description: 'Garment-washed oxford with a button-down collar.',
     inStock: true,
-    description:
-      'Tejido elástico en cuatro direcciones con perneras desmontables por cremallera.',
+    rating: 4.6,
+    reviewCount: 402,
   },
   {
-    sku: 'SKU-1007',
-    name: 'Frontal Recargable 400 lm',
-    category: 'Accesorios',
-    brand: 'Lumen',
-    price: 45.0,
-    currency: CURRENCY,
+    id: '1626678952050',
+    sku: 'mj07',
+    name: 'Suede Bomber Jacket',
+    price: 460,
+    category: 'Men',
+    imageUrl: 'https://picsum.photos/seed/blueberry-mj07/600/800',
+    description: 'Goat suede with ribbed trims and a quilted lining.',
     inStock: true,
-    description: 'Batería USB-C de 2000 mAh y modo rojo de visión nocturna.',
+    rating: 4.9,
+    reviewCount: 47,
   },
   {
-    sku: 'SKU-1008',
-    name: 'Saco de Dormir Confort 0º',
-    category: 'Acampada',
-    brand: 'Cima',
-    price: 165.0,
-    currency: CURRENCY,
+    id: '1626678952051',
+    sku: 'mc05',
+    name: 'Slim Stretch Chino',
+    price: 110,
+    category: 'Men',
+    imageUrl: 'https://picsum.photos/seed/blueberry-mc05/600/800',
+    description: 'Comfort-stretch twill with a clean, tapered leg.',
     inStock: true,
-    description:
-      'Relleno de plumón reciclado 650 cuin con cámara de aire diferencial.',
+    rating: 4.3,
+    reviewCount: 188,
+  },
+  {
+    id: '1626678952052',
+    sku: 'ks02',
+    name: 'Kids Canvas Sneaker',
+    price: 55,
+    category: 'Kids',
+    imageUrl: 'https://picsum.photos/seed/blueberry-ks02/600/800',
+    description: 'Washable canvas with a hook-and-loop strap.',
+    inStock: true,
+    rating: 4.5,
+    reviewCount: 275,
+  },
+  {
+    id: '1626678952053',
+    sku: 'kh06',
+    name: 'Kids Fleece Hoodie',
+    price: 45,
+    category: 'Kids',
+    imageUrl: 'https://picsum.photos/seed/blueberry-kh06/600/800',
+    description: 'Brushed-back fleece with a kangaroo pocket.',
+    inStock: true,
+    rating: 4.6,
+    reviewCount: 143,
+  },
+  {
+    id: '1626678952054',
+    sku: 'bs01',
+    name: 'Vitamin C Brightening Serum',
+    price: 68,
+    category: 'Beauty',
+    imageUrl: 'https://picsum.photos/seed/blueberry-bs01/600/800',
+    description: '15% L-ascorbic acid with ferulic acid, in an airless pump.',
+    inStock: true,
+    rating: 4.7,
+    reviewCount: 890,
+  },
+  {
+    id: '1626678952055',
+    sku: 'bf08',
+    name: 'Amber Oud Eau de Parfum',
+    price: 155,
+    category: 'Beauty',
+    imageUrl: 'https://picsum.photos/seed/blueberry-bf08/600/800',
+    description: 'Amber, oud and vanilla. 50 ml.',
+    inStock: true,
+    rating: 4.8,
+    reviewCount: 121,
+  },
+  {
+    id: '1626678952056',
+    sku: 'hp03',
+    name: 'Linen Throw Pillow',
+    price: 42,
+    category: 'Home',
+    imageUrl: 'https://picsum.photos/seed/blueberry-hp03/600/800',
+    description: 'Washed Belgian linen with a hidden zip. 50 × 50 cm.',
+    inStock: true,
+    rating: 4.4,
+    reviewCount: 67,
+  },
+  {
+    id: '1626678952057',
+    sku: 'hl09',
+    name: 'Ceramic Table Lamp',
+    price: 135,
+    category: 'Home',
+    imageUrl: 'https://picsum.photos/seed/blueberry-hl09/600/800',
+    description: 'Hand-thrown ceramic base with a linen drum shade.',
+    inStock: true,
+    rating: 4.6,
+    reviewCount: 39,
+  },
+  {
+    id: '1626678952058',
+    sku: 'hb04',
+    name: 'Sateen Bedding Set',
+    price: 210,
+    category: 'Home',
+    imageUrl: 'https://picsum.photos/seed/blueberry-hb04/600/800',
+    description: '500-thread-count cotton sateen. Duvet cover and two shams.',
+    inStock: true,
+    rating: 4.5,
+    reviewCount: 156,
   },
 ];
-
-export const bySku = (sku: string): Product | undefined =>
-  CATALOG.find(product => product.sku === sku);
-
-export const formatPrice = (value: number, currency = CURRENCY): string =>
-  new Intl.NumberFormat('es-ES', { style: 'currency', currency }).format(value);
-
-/**
- * Lo que las pantallas pintan: siempre tiene nombre y precio, vengan de DY o
- * del catálogo local.
- */
-export interface DisplayProduct {
-  sku: string;
-  name: string;
-  brand?: string;
-  price?: number;
-  currency: string;
-  imageUrl?: string;
-  inStock: boolean;
-  /** De dónde salieron los datos, para mostrarlo en el panel de depuración. */
-  source: 'dy' | 'catálogo';
-}
-
-/**
- * Fusiona un slot de DY con el catálogo local.
- *
- * DY manda cuando trae el dato; el catálogo rellena los huecos. Un SKU que DY
- * recomienda pero que la tienda no conoce se sigue mostrando: es preferible a
- * un carrusel con agujeros.
- */
-export const toDisplayProduct = (slot: DyProductData): DisplayProduct => {
-  const local = bySku(slot.sku);
-  const fromDy = slot.name !== undefined || slot.price !== undefined;
-
-  return {
-    sku: slot.sku,
-    name: slot.name ?? local?.name ?? slot.sku,
-    brand: slot.brand ?? local?.brand,
-    price: slot.price ?? local?.price,
-    currency: local?.currency ?? CURRENCY,
-    imageUrl: slot.imageUrl ?? local?.imageUrl,
-    inStock: slot.inStock ?? local?.inStock ?? true,
-    source: fromDy ? 'dy' : 'catálogo',
-  };
-};
-
-export const productToDisplay = (product: Product): DisplayProduct => ({
-  sku: product.sku,
-  name: product.name,
-  brand: product.brand,
-  price: product.price,
-  currency: product.currency,
-  imageUrl: product.imageUrl,
-  inStock: product.inStock,
-  source: 'catálogo',
-});

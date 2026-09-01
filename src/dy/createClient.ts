@@ -1,35 +1,66 @@
+/**
+ * Elige adaptador en tiempo de ejecución.
+ *
+ * El SDK es un TurboModule nativo: solo existe en un build real de iOS o
+ * Android. En Jest, en Node o en un Metro sin build nativo no está, y
+ * `getEnforcing` lanzaría al importarlo. Por eso se comprueba antes con
+ * `TurboModuleRegistry.get`, que devuelve `null` en vez de lanzar, y solo
+ * entonces se carga `nativeClient` con un `require`.
+ *
+ * Este fichero **no** se reexporta desde `index.ts` a propósito: un import
+ * estático arrastraría el adaptador nativo al bundle de los tests.
+ */
+
 import { TurboModuleRegistry } from 'react-native';
 
-import type { ObservableDyClient } from './DyClient';
-import { createMockDyClient } from './mockClient';
-import { hasRealApiKey } from './dyConfig';
+import { appConfig, isDynamicYieldConfigured } from '../config/appConfig';
+import type { DyClient } from './DyClient';
+import { createMockClient } from './mockClient';
 
-/**
- * Decide qué adaptador usar.
- *
- * El SDK de DY es un TurboModule nativo: solo existe en un build real de
- * iOS/Android. En Jest, en Node o en un Metro sin build nativo, importarlo
- * revienta (`getEnforcing` lanza si el módulo no está registrado). Por eso se
- * comprueba primero con `TurboModuleRegistry.get`, que devuelve `null` en vez
- * de lanzar, y solo entonces se carga el adaptador nativo.
- *
- * Sin API key configurada también se cae al simulado: es preferible a que la
- * app falle al arrancar con un placeholder.
- */
-export const isNativeSdkAvailable = (): boolean =>
-  TurboModuleRegistry.get('DYPlugin') !== null;
+/** Nombre del TurboModule que expone el SDK. */
+const DY_TURBO_MODULE = 'DYPlugin';
 
-export const createDyClient = (): ObservableDyClient => {
-  if (!isNativeSdkAvailable() || !hasRealApiKey()) {
-    return createMockDyClient();
+export interface ClientChoice {
+  client: DyClient;
+  kind: 'native' | 'mock';
+  /** Por qué se eligió, para mostrarlo en el panel de depuración. */
+  reason: string;
+}
+
+export const createDyClient = (): ClientChoice => {
+  if (!isDynamicYieldConfigured()) {
+    return {
+      client: createMockClient(),
+      kind: 'mock',
+      reason: 'Sin API key: pon la tuya en src/config/dyKeys.ts',
+    };
   }
 
-  // require() y no import: un import estático arrastraría el SDK al bundle de
-  // los tests, donde el TurboModule no existe.
-  const { createNativeDyClient } = require('./nativeClient') as typeof import('./nativeClient');
-  return createNativeDyClient();
-};
+  if (!appConfig.enableDyRecommendations) {
+    return {
+      client: createMockClient(),
+      kind: 'mock',
+      reason: 'Recomendaciones de DY desactivadas en appConfig',
+    };
+  }
 
-/** Qué adaptador está activo, para mostrarlo en el panel de depuración. */
-export const activeClientKind = (): 'nativo' | 'simulado' =>
-  isNativeSdkAvailable() && hasRealApiKey() ? 'nativo' : 'simulado';
+  if (!TurboModuleRegistry.get(DY_TURBO_MODULE)) {
+    return {
+      client: createMockClient(),
+      kind: 'mock',
+      reason: 'SDK nativo ausente: hace falta un build de iOS o Android',
+    };
+  }
+
+  // require, no import: un import estático metería el SDK en el bundle de test.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { createNativeClient } = require('./nativeClient') as {
+    createNativeClient: () => DyClient;
+  };
+
+  return {
+    client: createNativeClient(),
+    kind: 'native',
+    reason: 'SDK nativo disponible',
+  };
+};

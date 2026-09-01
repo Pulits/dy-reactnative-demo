@@ -1,225 +1,82 @@
+/**
+ * Contexto de Dynamic Yield.
+ *
+ * Crea el servicio una sola vez, lo inicializa al montar y expone el estado
+ * observable a las pantallas. El equivalente del singleton `@MainActor` de la
+ * app de iOS.
+ */
+
 import React, {
   createContext,
-  useCallback,
   useContext,
   useEffect,
   useMemo,
   useRef,
-  useState,
+  useSyncExternalStore,
 } from 'react';
 
-import type { DyLogEntry, ObservableDyClient } from './DyClient';
 import { createDyClient } from './createClient';
-import { DY_CONFIG } from './dyConfig';
-import type {
-  DyChoice,
-  DyEngagement,
-  DyEvent,
-  DyPageContext,
-} from './types';
+import { DyService } from './DyService';
+import type { DyState } from './DyService';
 
 interface DyContextValue {
-  client: ObservableDyClient;
-  ready: boolean;
-  consent: boolean;
-  setConsent: (granted: boolean) => void;
-  log: DyLogEntry[];
-  clearLog: () => void;
+  dy: DyService;
+  /** Qué adaptador está activo y por qué; se muestra en el panel de debug. */
+  clientKind: 'native' | 'mock';
+  clientReason: string;
 }
 
-const DyContext = createContext<DyContextValue | null>(null);
+const DyContext = createContext<DyContextValue | undefined>(undefined);
 
 export const DyProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  // El cliente se crea una vez y sobrevive a los re-renders.
-  const clientRef = useRef<ObservableDyClient | null>(null);
-  if (!clientRef.current) {
-    clientRef.current = createDyClient();
-  }
-  const client = clientRef.current;
+  const value = useMemo<DyContextValue>(() => {
+    const { client, kind, reason } = createDyClient();
+    return {
+      dy: new DyService(client),
+      clientKind: kind,
+      clientReason: reason,
+    };
+  }, []);
 
-  const [ready, setReady] = useState(false);
-  const [consent, setConsentState] = useState(DY_CONFIG.consent.granted);
-  const [log, setLog] = useState<DyLogEntry[]>([]);
+  const started = useRef(false);
 
   useEffect(() => {
-    let cancelled = false;
-
-    client
-      .init(DY_CONFIG)
-      .then(() => {
-        if (!cancelled) {
-          setReady(true);
-        }
-      })
-      .catch((error: unknown) => {
-        console.error('[dy] init falló', error);
-      });
-
-    const unsubscribe = client.subscribe(setLog);
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, [client]);
-
-  const setConsent = useCallback(
-    (granted: boolean) => {
-      setConsentState(granted);
-      client.setConsent(granted).catch((error: unknown) => {
-        console.error('[dy] setConsent falló', error);
-      });
-    },
-    [client],
-  );
-
-  const clearLog = useCallback(() => client.clearLog(), [client]);
-
-  const value = useMemo<DyContextValue>(
-    () => ({ client, ready, consent, setConsent, log, clearLog }),
-    [client, ready, consent, setConsent, log, clearLog],
-  );
+    // En StrictMode el efecto corre dos veces; initialize() es idempotente,
+    // pero evitamos siquiera la segunda llamada.
+    if (started.current) {
+      return;
+    }
+    started.current = true;
+    void value.dy.initialize();
+  }, [value]);
 
   return <DyContext.Provider value={value}>{children}</DyContext.Provider>;
 };
 
-export const useDy = (): DyContextValue => {
-  const value = useContext(DyContext);
-  if (!value) {
+const useDyContext = (): DyContextValue => {
+  const context = useContext(DyContext);
+  if (!context) {
     throw new Error('useDy debe usarse dentro de <DyProvider>.');
   }
-  return value;
+  return context;
 };
 
-/** Reporta un pageview cada vez que cambia el contexto de pantalla. */
-export const usePageView = (context: DyPageContext): void => {
-  const { client, ready } = useDy();
-  const key = `${context.type}|${context.data.join(',')}|${context.locale}`;
+/** El servicio, para lanzar llamadas. No re-renderiza al cambiar el estado. */
+export const useDy = (): DyService => useDyContext().dy;
 
-  useEffect(() => {
-    if (!ready) {
-      return;
-    }
-    client.pageView(context).catch((error: unknown) => {
-      console.error('[dy] pageView falló', error);
-    });
-    // `key` resume el contexto: evita re-disparar por identidad del objeto.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, ready, key]);
-};
-
-interface ChooseState {
-  choices: DyChoice[];
-  loading: boolean;
-  error: Error | null;
-}
-
-/**
- * Resuelve campañas para la pantalla actual.
- *
- * Reporta la impresión automáticamente al recibir las variaciones, que es lo que
- * DY espera para atribuir el engagement. Si una campaña se renderiza fuera de la
- * vista (p.ej. un carrusel por debajo del scroll), pasa `autoImpression: false` y
- * llama a `reportImpression` cuando de verdad se vea.
- */
-export const useChoose = (
-  selectors: string[],
-  context: DyPageContext,
-  options: { implicitPageview?: boolean; autoImpression?: boolean } = {},
-): ChooseState & {
-  reportImpression: (choice: DyChoice) => void;
-  reportClick: (choice: DyChoice) => void;
+/** Qué adaptador está activo. */
+export const useDyClientInfo = (): {
+  kind: 'native' | 'mock';
+  reason: string;
 } => {
-  const { client, ready } = useDy();
-  const { implicitPageview = false, autoImpression = true } = options;
-
-  const [state, setState] = useState<ChooseState>({
-    choices: [],
-    loading: true,
-    error: null,
-  });
-
-  const selectorKey = selectors.join('|');
-  const contextKey = `${context.type}|${context.data.join(',')}|${context.locale}`;
-
-  const report = useCallback(
-    (type: DyEngagement['type'], choice: DyChoice) => {
-      if (!choice.decisionId) {
-        // Sin decisionId no hay nada que atribuir (p.ej. NO_DECISION).
-        return;
-      }
-      client
-        .reportEngagement({
-          type,
-          decisionId: choice.decisionId,
-          variationIds: choice.variations.map(variation => variation.id),
-        })
-        .catch((error: unknown) => {
-          console.error('[dy] reportEngagement falló', error);
-        });
-    },
-    [client],
-  );
-
-  useEffect(() => {
-    if (!ready) {
-      return;
-    }
-
-    let cancelled = false;
-    setState(current => ({ ...current, loading: true, error: null }));
-
-    client
-      .choose({ selectors, context, implicitPageview })
-      .then(result => {
-        if (cancelled) {
-          return;
-        }
-        setState({ choices: result.choices, loading: false, error: null });
-        if (autoImpression) {
-          result.choices.forEach(choice => report('IMPRESSION', choice));
-        }
-      })
-      .catch((error: unknown) => {
-        if (cancelled) {
-          return;
-        }
-        setState({
-          choices: [],
-          loading: false,
-          error: error instanceof Error ? error : new Error(String(error)),
-        });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, ready, selectorKey, contextKey, implicitPageview, autoImpression, report]);
-
-  return {
-    ...state,
-    reportImpression: useCallback(
-      (choice: DyChoice) => report('IMPRESSION', choice),
-      [report],
-    ),
-    reportClick: useCallback(
-      (choice: DyChoice) => report('CLICK', choice),
-      [report],
-    ),
-  };
+  const { clientKind, clientReason } = useDyContext();
+  return { kind: clientKind, reason: clientReason };
 };
 
-/** Envía un evento de negocio a DY. */
-export const useTrackEvent = (): ((event: DyEvent) => void) => {
-  const { client } = useDy();
-  return useCallback(
-    (event: DyEvent) => {
-      client.trackEvent(event).catch((error: unknown) => {
-        console.error('[dy] trackEvent falló', error);
-      });
-    },
-    [client],
-  );
+/** El estado observable del servicio; re-renderiza cuando cambia. */
+export const useDyState = (): DyState => {
+  const { dy } = useDyContext();
+  return useSyncExternalStore(dy.subscribe, dy.getState, dy.getState);
 };
