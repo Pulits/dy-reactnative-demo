@@ -148,5 +148,5 @@ export const usePopOnChange = (value: number): Animated.Value => {
 
 const styles = StyleSheet.create({
   skeleton: { backgroundColor: theme.color.surfaceAlt, overflow: 'hidden' },
-  shimmer: { backgroundColor: theme.color.veilTop },
+  shimmer: { backgroundColor: theme.color.veilSoft },
 });

@@ -14,6 +14,9 @@ import {
   hasRealKeys,
 } from './dyKeys';
 
+/** React Native no trae los tipos de Node; solo se necesita esta parte. */
+declare const process: { env: { NODE_ENV?: string } };
+
 export const appConfig = {
   // ---- Dynamic Yield -------------------------------------------------------
   dyApiKey: DY_API_KEY,
@@ -172,7 +175,8 @@ export const appConfig = {
   defaultActiveConsent: true,
 
   // ---- Debug ---------------------------------------------------------------
-  debugMode: __DEV__,
+  // En test se silencia: el volcado por consola domina la salida y el tiempo.
+  debugMode: __DEV__ && process.env.NODE_ENV !== 'test',
 } as const;
 
 /** `false` mientras las claves sigan siendo los placeholders del repo. */

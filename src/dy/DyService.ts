@@ -17,7 +17,6 @@ import {
 import type {
   ActivityEntry,
   ActivityKind,
-  AffinityProfile,
   Campaign,
   CartItem,
   HomeRecommendations,

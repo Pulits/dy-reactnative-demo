@@ -53,7 +53,6 @@ export const createDyClient = (): ClientChoice => {
   }
 
   // require, no import: un import estático metería el SDK en el bundle de test.
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { createNativeClient } = require('./nativeClient') as {
     createNativeClient: () => DyClient;
   };

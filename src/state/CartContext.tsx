@@ -1,3 +1,12 @@
+/**
+ * Carrito — port de `CartManager.swift`.
+ *
+ * Cada cambio reporta dos cosas a DY: el evento concreto (add/remove) y un
+ * `Sync Cart` con el estado resultante. El sync es lo que mantiene el carrito
+ * de DY al día entre sesiones y dispositivos; sin él, DY solo vería los deltas
+ * y se desincronizaría en cuanto se pierda un evento.
+ */
+
 import React, {
   createContext,
   useCallback,
@@ -6,99 +15,136 @@ import React, {
   useState,
 } from 'react';
 
-import { bySku } from '../catalog';
-import type { DyCartLine } from '../dy';
-
-export interface CartLine {
-  sku: string;
-  quantity: number;
-}
+import { useDy } from '../dy/DyProvider';
+import type { CartItem, Product } from '../models';
+import { skuOf } from '../models';
 
 interface CartContextValue {
-  lines: CartLine[];
-  count: number;
+  items: CartItem[];
+  itemCount: number;
   total: number;
-  add: (sku: string) => void;
-  remove: (sku: string) => void;
+  skus: string[];
+  addItem: (product: Product, quantity?: number) => void;
+  removeItem: (product: Product) => void;
+  updateQuantity: (product: Product, quantity: number) => void;
+  checkout: () => void;
   clear: () => void;
-  /** Carrito en el formato que espera el evento de compra de DY. */
-  toDyCart: () => DyCartLine[];
 }
 
-const CartContext = createContext<CartContextValue | null>(null);
+const CartContext = createContext<CartContextValue | undefined>(undefined);
 
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const [lines, setLines] = useState<CartLine[]>([]);
+  const dy = useDy();
+  const [items, setItems] = useState<CartItem[]>([]);
 
-  const add = useCallback((sku: string) => {
-    setLines(current => {
-      const existing = current.find(line => line.sku === sku);
-      if (existing) {
-        return current.map(line =>
-          line.sku === sku ? { ...line, quantity: line.quantity + 1 } : line,
-        );
+  const addItem = useCallback(
+    (product: Product, quantity = 1) => {
+      setItems(current => {
+        const index = current.findIndex(item => item.product.id === product.id);
+        const next =
+          index >= 0
+            ? current.map((item, i) =>
+                i === index
+                  ? { ...item, quantity: item.quantity + quantity }
+                  : item,
+              )
+            : [...current, { id: product.id, product, quantity }];
+
+        void dy
+          .reportAddToCart(product, quantity)
+          .then(() => dy.reportSyncCart(next));
+        return next;
+      });
+    },
+    [dy],
+  );
+
+  const removeItem = useCallback(
+    (product: Product) => {
+      setItems(current => {
+        const removed =
+          current.find(item => item.product.id === product.id)?.quantity ?? 0;
+        if (removed === 0) {
+          return current;
+        }
+        const next = current.filter(item => item.product.id !== product.id);
+        void dy
+          .reportRemoveFromCart(product, removed)
+          .then(() => dy.reportSyncCart(next));
+        return next;
+      });
+    },
+    [dy],
+  );
+
+  const updateQuantity = useCallback(
+    (product: Product, quantity: number) => {
+      if (quantity <= 0) {
+        removeItem(product);
+        return;
       }
-      return [...current, { sku, quantity: 1 }];
-    });
-  }, []);
+      setItems(current => {
+        const index = current.findIndex(item => item.product.id === product.id);
+        if (index < 0) {
+          return current;
+        }
+        const delta = quantity - current[index].quantity;
+        if (delta === 0) {
+          return current;
+        }
+        const next = current.map((item, i) =>
+          i === index ? { ...item, quantity } : item,
+        );
 
-  const remove = useCallback((sku: string) => {
-    setLines(current =>
-      current
-        .map(line =>
-          line.sku === sku ? { ...line, quantity: line.quantity - 1 } : line,
-        )
-        .filter(line => line.quantity > 0),
-    );
-  }, []);
-
-  const clear = useCallback(() => setLines([]), []);
+        const event =
+          delta > 0
+            ? dy.reportAddToCart(product, delta)
+            : dy.reportRemoveFromCart(product, -delta);
+        void event.then(() => dy.reportSyncCart(next));
+        return next;
+      });
+    },
+    [dy, removeItem],
+  );
 
   const total = useMemo(
     () =>
-      lines.reduce((sum, line) => {
-        const product = bySku(line.sku);
-        return product ? sum + product.price * line.quantity : sum;
-      }, 0),
-    [lines],
+      items.reduce((sum, item) => sum + item.product.price * item.quantity, 0),
+    [items],
   );
 
-  const count = useMemo(
-    () => lines.reduce((sum, line) => sum + line.quantity, 0),
-    [lines],
-  );
-
-  const toDyCart = useCallback(
-    (): DyCartLine[] =>
-      lines.flatMap(line => {
-        const product = bySku(line.sku);
-        return product
-          ? [
-              {
-                productId: line.sku,
-                quantity: line.quantity,
-                itemPrice: product.price,
-              },
-            ]
-          : [];
-      }),
-    [lines],
-  );
+  const checkout = useCallback(() => {
+    if (items.length === 0) {
+      return;
+    }
+    void dy.reportPurchase(items, total);
+    setItems([]);
+  }, [dy, items, total]);
 
   const value = useMemo<CartContextValue>(
-    () => ({ lines, count, total, add, remove, clear, toDyCart }),
-    [lines, count, total, add, remove, clear, toDyCart],
+    () => ({
+      items,
+      itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
+      total,
+      skus: items.map(item => skuOf(item.product)),
+      addItem,
+      removeItem,
+      updateQuantity,
+      checkout,
+      clear: () => setItems([]),
+    }),
+    [items, total, addItem, removeItem, updateQuantity, checkout],
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 };
 
 export const useCart = (): CartContextValue => {
-  const value = useContext(CartContext);
-  if (!value) {
+  const context = useContext(CartContext);
+  if (!context) {
     throw new Error('useCart debe usarse dentro de <CartProvider>.');
   }
-  return value;
+  return context;
 };

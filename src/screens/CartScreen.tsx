@@ -1,240 +1,212 @@
-import React, { useMemo, useState } from 'react';
+/**
+ * Carrito — port de `CartView.swift`.
+ *
+ * El pageview lleva los SKUs del carrito como contexto, que es lo que necesita
+ * la campaña `Cart Recs` para recomendar sobre lo que ya hay dentro.
+ */
+
+import React, { useEffect } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { bySku, CURRENCY, formatPrice, productToDisplay } from '../catalog';
-import { FadeInUp } from '../components/motion';
-import { ProductCard } from '../components/ProductCard';
-import { usePageView, useTrackEvent, type DyPageContext } from '../dy';
+import { ProductImage } from '../components/ProductCard';
+import { ProductRail } from '../components/ProductRail';
+import { useDy } from '../dy/DyProvider';
+import { useAsync } from '../hooks/useAsync';
+import { EMPTY_RECOMMENDATIONS } from '../models';
 import { useCart } from '../state/CartContext';
-import { theme } from '../theme';
+import { formatPrice, theme } from '../theme';
 
-export const CartScreen: React.FC<{ onContinue: () => void }> = ({
-  onContinue,
-}) => {
+export const CartScreen: React.FC = () => {
+  const dy = useDy();
   const cart = useCart();
-  const trackEvent = useTrackEvent();
-  const [confirmation, setConfirmation] = useState<string | null>(null);
+  const skuKey = cart.skus.join(',');
 
-  const lines = useMemo(
-    () =>
-      cart.lines.flatMap(line => {
-        const product = bySku(line.sku);
-        return product ? [{ ...line, product }] : [];
-      }),
-    [cart.lines],
+  useEffect(() => {
+    void dy.reportCartPageView(cart.skus);
+    // Solo al cambiar el contenido, no en cada render del carrito.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dy, skuKey]);
+
+  const recs = useAsync(
+    () => dy.getCartRecommendations(cart.skus),
+    EMPTY_RECOMMENDATIONS,
+    [dy, skuKey],
   );
 
-  // El contexto de CART lleva los SKUs del carrito: DY los usa para segmentar
-  // y para campañas de recuperación.
-  const context = useMemo<DyPageContext>(
-    () => ({
-      type: 'CART',
-      location: 'dydemo://cart',
-      data: cart.lines.map(line => line.sku),
-      locale: 'es_ES',
-    }),
-    [cart.lines],
-  );
-
-  usePageView(context);
-
-  const handlePurchase = (): void => {
-    // El id de transacción debe ser único: DY lo usa para deduplicar compras.
-    const transactionId = `TX-${Date.now()}`;
-
-    trackEvent({
-      kind: 'purchase',
-      name: 'Purchase',
-      value: Number(cart.total.toFixed(2)),
-      currency: CURRENCY,
-      uniqueTransactionId: transactionId,
-      cart: cart.toDyCart(),
-    });
-
-    setConfirmation(transactionId);
-    cart.clear();
-  };
-
-  if (confirmation) {
-    return (
-      <FadeInUp style={styles.empty}>
-        <View style={styles.tick}>
-          <Text style={styles.tickMark}>✓</Text>
-        </View>
-        <Text style={styles.emptyTitle}>Pedido confirmado</Text>
-        <Text style={styles.emptyBody}>
-          Se envió el evento de compra a Dynamic Yield con el id{' '}
-          <Text style={styles.mono}>{confirmation}</Text>. Ábrelo en el panel DY
-          para ver el payload exacto.
-        </Text>
-        <Pressable
-          onPress={onContinue}
-          accessibilityRole="button"
-          style={styles.ghostCta}>
-          <Text style={styles.ghostCtaText}>Volver a la tienda</Text>
-        </Pressable>
-      </FadeInUp>
-    );
-  }
-
-  if (lines.length === 0) {
+  if (cart.items.length === 0) {
     return (
       <View style={styles.empty}>
-        <Text style={styles.emptyEmoji}>🎒</Text>
-        <Text style={styles.emptyTitle}>Tu carrito está vacío</Text>
+        <Text style={styles.emptyTitle}>Your cart is empty</Text>
         <Text style={styles.emptyBody}>
-          Añade algo para ver el evento de compra viajar a DY.
+          Add something you like and it will show up here.
         </Text>
-        <Pressable
-          onPress={onContinue}
-          accessibilityRole="button"
-          style={styles.ghostCta}>
-          <Text style={styles.ghostCtaText}>Ver productos</Text>
-        </Pressable>
       </View>
     );
   }
 
   return (
-    <ScrollView
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}>
-      {lines.map((line, index) => (
-        <FadeInUp key={line.sku} delay={index * 60}>
-          <View style={styles.lineWrap}>
-            <ProductCard
-              product={productToDisplay(line.product)}
-              variant="row"
-              onPress={() => {}}
+    <View style={styles.root}>
+      <ScrollView contentContainerStyle={styles.content}>
+        {cart.items.map(item => (
+          <View key={item.id} style={styles.row}>
+            <ProductImage
+              uri={item.product.imageUrl}
+              style={styles.thumbnail}
             />
-            <View style={styles.qty}>
-              <Pressable
-                onPress={() => cart.remove(line.sku)}
-                accessibilityRole="button"
-                accessibilityLabel={`Quitar una unidad de ${line.product.name}`}
-                style={styles.qtyButton}>
-                <Text style={styles.qtySign}>−</Text>
-              </Pressable>
-              <Text style={styles.qtyValue}>{line.quantity}</Text>
-              <Pressable
-                onPress={() => cart.add(line.sku)}
-                accessibilityRole="button"
-                accessibilityLabel={`Añadir una unidad de ${line.product.name}`}
-                style={styles.qtyButton}>
-                <Text style={styles.qtySign}>+</Text>
-              </Pressable>
+
+            <View style={styles.rowBody}>
+              <Text style={styles.rowName} numberOfLines={2}>
+                {item.product.name}
+              </Text>
+              <Text style={styles.rowPrice}>
+                {formatPrice(item.product.price)}
+              </Text>
+
+              <View style={styles.stepper}>
+                <Pressable
+                  onPress={() =>
+                    cart.updateQuantity(item.product, item.quantity - 1)
+                  }
+                  hitSlop={8}
+                  style={styles.stepperButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Quitar una unidad"
+                >
+                  <Text style={styles.stepperIcon}>−</Text>
+                </Pressable>
+
+                <Text style={styles.quantity}>{item.quantity}</Text>
+
+                <Pressable
+                  onPress={() =>
+                    cart.updateQuantity(item.product, item.quantity + 1)
+                  }
+                  hitSlop={8}
+                  style={styles.stepperButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Añadir una unidad"
+                >
+                  <Text style={styles.stepperIcon}>+</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => cart.removeItem(item.product)}
+                  hitSlop={8}
+                  style={styles.remove}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.removeText}>Remove</Text>
+                </Pressable>
+              </View>
             </View>
           </View>
-        </FadeInUp>
-      ))}
+        ))}
 
-      <View style={styles.summary}>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Subtotal</Text>
-          <Text style={styles.summaryValue}>{formatPrice(cart.total)}</Text>
-        </View>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Envío</Text>
-          <Text style={[styles.summaryValue, styles.free]}>Gratis</Text>
-        </View>
-        <View style={styles.divider} />
-        <View style={styles.summaryRow}>
+        <ProductRail
+          title={recs.data.title ?? 'Complete your order'}
+          products={recs.data.products}
+          loading={recs.loading}
+        />
+      </ScrollView>
+
+      <View style={styles.footer}>
+        <View style={styles.totalRow}>
           <Text style={styles.totalLabel}>Total</Text>
           <Text style={styles.totalValue}>{formatPrice(cart.total)}</Text>
         </View>
+        <Pressable
+          onPress={cart.checkout}
+          style={({ pressed }) => [styles.checkout, pressed && styles.pressed]}
+          accessibilityRole="button"
+        >
+          <Text style={styles.checkoutText}>Checkout</Text>
+        </Pressable>
       </View>
-
-      <Pressable
-        onPress={handlePurchase}
-        accessibilityRole="button"
-        style={({ pressed }) => [styles.cta, pressed && styles.ctaPressed]}>
-        <Text style={styles.ctaText}>Finalizar compra</Text>
-      </Pressable>
-    </ScrollView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  content: { padding: theme.space(2.5), gap: theme.space(1.5) },
-  lineWrap: { gap: theme.space(1) },
-  qty: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-end',
-    gap: theme.space(1.5),
-  },
-  qtyButton: {
-    width: 32,
-    height: 32,
-    borderRadius: theme.radius.sm,
-    backgroundColor: theme.color.surfaceAlt,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  qtySign: { color: theme.color.text, fontSize: 18, fontWeight: '700' },
-  qtyValue: {
-    ...theme.font.body,
-    color: theme.color.text,
-    minWidth: 18,
-    textAlign: 'center',
-  },
-  summary: {
-    marginTop: theme.space(1),
-    padding: theme.space(2),
-    borderRadius: theme.radius.md,
-    backgroundColor: theme.color.surface,
-    borderWidth: 1,
-    borderColor: theme.color.borderSoft,
-    gap: theme.space(1),
-  },
-  summaryRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  summaryLabel: { ...theme.font.body, color: theme.color.textMuted },
-  summaryValue: { ...theme.font.body, color: theme.color.text },
-  free: { color: theme.color.success },
-  divider: { height: 1, backgroundColor: theme.color.border },
-  totalLabel: { ...theme.font.heading, color: theme.color.text },
-  totalValue: { fontSize: 21, fontWeight: '800', color: theme.color.accentSoft },
-  cta: {
-    backgroundColor: theme.color.accent,
-    borderRadius: theme.radius.md,
-    paddingVertical: theme.space(2),
-    alignItems: 'center',
-    ...theme.shadow.glow,
-  },
-  ctaPressed: { opacity: 0.85 },
-  ctaText: { ...theme.font.heading, color: '#fff' },
+  root: { flex: 1, backgroundColor: theme.color.background },
+  content: { paddingVertical: theme.space.lg, gap: theme.space.lg },
   empty: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: theme.space(4),
-    gap: theme.space(1.25),
+    gap: theme.space.sm,
+    padding: theme.space.xl,
   },
-  emptyEmoji: { fontSize: 44 },
-  tick: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: theme.color.success,
-    alignItems: 'center',
-    justifyContent: 'center',
+  emptyTitle: {
+    fontSize: theme.font.title,
+    fontWeight: '700',
+    color: theme.color.text,
   },
-  tickMark: { fontSize: 30, color: '#fff', fontWeight: '800' },
-  emptyTitle: { ...theme.font.title, color: theme.color.text },
   emptyBody: {
-    ...theme.font.body,
+    fontSize: theme.font.body,
     color: theme.color.textMuted,
-    lineHeight: 21,
     textAlign: 'center',
   },
-  mono: { color: theme.color.accentSoft },
-  ghostCta: {
-    marginTop: theme.space(1),
-    borderRadius: theme.radius.pill,
-    borderWidth: 1,
-    borderColor: theme.color.border,
-    paddingHorizontal: theme.space(2.5),
-    paddingVertical: theme.space(1.25),
+  row: {
+    flexDirection: 'row',
+    gap: theme.space.md,
+    paddingHorizontal: theme.space.lg,
   },
-  ghostCtaText: { ...theme.font.body, color: theme.color.text },
+  thumbnail: { width: 84, height: 105 },
+  rowBody: { flex: 1, gap: theme.space.xs },
+  rowName: { fontSize: theme.font.body, color: theme.color.text },
+  rowPrice: {
+    fontSize: theme.font.body,
+    fontWeight: '700',
+    color: theme.color.text,
+  },
+  stepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space.md,
+    marginTop: theme.space.xs,
+  },
+  stepperButton: {
+    width: 30,
+    height: 30,
+    borderRadius: theme.radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.color.surfaceAlt,
+  },
+  stepperIcon: {
+    fontSize: theme.font.section,
+    color: theme.color.text,
+    lineHeight: 20,
+  },
+  quantity: {
+    minWidth: 20,
+    textAlign: 'center',
+    fontSize: theme.font.body,
+    fontWeight: '600',
+    color: theme.color.text,
+  },
+  remove: { marginLeft: 'auto' },
+  removeText: { fontSize: theme.font.label, color: theme.color.danger },
+  footer: {
+    padding: theme.space.lg,
+    gap: theme.space.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.color.border,
+  },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  totalLabel: { fontSize: theme.font.body, color: theme.color.textMuted },
+  totalValue: {
+    fontSize: theme.font.title,
+    fontWeight: '800',
+    color: theme.color.text,
+  },
+  checkout: {
+    height: 52,
+    borderRadius: theme.radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.color.text,
+  },
+  checkoutText: { color: '#fff', fontSize: theme.font.body, fontWeight: '700' },
+  pressed: { opacity: 0.75 },
 });

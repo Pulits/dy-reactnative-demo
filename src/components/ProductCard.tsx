@@ -1,175 +1,172 @@
-import React, { useRef, useState } from 'react';
+/**
+ * Tarjeta de producto.
+ *
+ * El click se reporta a DY antes de navegar: sin `slotId` no habría SLOT_CLICK
+ * y la campaña no se llevaría la atribución.
+ */
+
+import React from 'react';
 import {
-  Animated,
   Image,
   Pressable,
   StyleSheet,
   Text,
   View,
+  type ImageStyle,
 } from 'react-native';
 
-import { formatPrice, type DisplayProduct } from '../catalog';
-import { theme, tintFor } from '../theme';
-import { Skeleton } from './motion';
+import { useDy } from '../dy/DyProvider';
+import type { Product } from '../models';
+import { useNavigation } from '../navigation/NavigationContext';
+import { useWishlist } from '../state/WishlistContext';
+import { formatPrice, theme } from '../theme';
 
-interface Props {
-  product: DisplayProduct;
-  onPress: () => void;
-  variant?: 'rail' | 'grid' | 'row';
-  /** Marca la tarjeta como servida por una campaña de DY. */
-  badge?: string;
-}
+export const StarRating: React.FC<{ rating: number; reviews?: number }> = ({
+  rating,
+  reviews,
+}) => (
+  <View style={styles.ratingRow}>
+    <Text style={styles.star}>★</Text>
+    <Text style={styles.ratingText}>{rating.toFixed(1)}</Text>
+    {reviews !== undefined && (
+      <Text style={styles.reviewCount}>({reviews})</Text>
+    )}
+  </View>
+);
 
-const SIZES = {
-  rail: { width: 176, image: 176 },
-  grid: { width: '48%' as const, image: 150 },
-  row: { width: '100%' as const, image: 72 },
-};
+export const ProductImage: React.FC<{
+  uri?: string;
+  style?: ImageStyle;
+}> = ({ uri, style }) =>
+  uri ? (
+    <Image source={{ uri }} style={[styles.image, style]} resizeMode="cover" />
+  ) : (
+    <View style={[styles.image, styles.imageFallback, style]}>
+      <Text style={styles.imageFallbackMark}>B</Text>
+    </View>
+  );
 
-export const ProductCard: React.FC<Props> = ({
-  product,
-  onPress,
-  variant = 'rail',
-  badge,
-}) => {
-  const scale = useRef(new Animated.Value(1)).current;
-  const [imageFailed, setImageFailed] = useState(false);
-  const size = SIZES[variant];
-  const isRow = variant === 'row';
+export const ProductCard: React.FC<{
+  product: Product;
+  width: number;
+  showWishlist?: boolean;
+}> = ({ product, width, showWishlist = true }) => {
+  const dy = useDy();
+  const { push } = useNavigation();
+  const wishlist = useWishlist();
+  const saved = wishlist.contains(product);
 
-  const press = (toValue: number): void => {
-    Animated.spring(scale, {
-      toValue,
-      friction: 7,
-      tension: 220,
-      useNativeDriver: true,
-    }).start();
+  const open = (): void => {
+    void dy.reportRecommendationClick(product);
+    push({ name: 'product', product });
   };
 
-  // Sin imagen del feed se usa un tinte estable derivado del SKU, para que la
-  // tarjeta nunca quede vacía ni cambie de color entre renders.
-  const showImage = Boolean(product.imageUrl) && !imageFailed;
-
   return (
-    <Animated.View style={{ width: size.width, transform: [{ scale }] }}>
-      <Pressable
-        onPress={onPress}
-        onPressIn={() => press(0.96)}
-        onPressOut={() => press(1)}
-        accessibilityRole="button"
-        accessibilityLabel={
-          product.price === undefined
-            ? product.name
-            : `${product.name}, ${formatPrice(product.price, product.currency)}`
-        }
-        style={[styles.card, isRow && styles.cardRow]}>
-        <View
-          style={[
-            styles.imageWrap,
-            { height: size.image },
-            isRow && styles.imageWrapRow,
-            { backgroundColor: tintFor(product.sku) },
-          ]}>
-          {showImage && (
-            <Image
-              source={{ uri: product.imageUrl }}
-              style={StyleSheet.absoluteFill}
-              resizeMode="cover"
-              onError={() => setImageFailed(true)}
-            />
-          )}
+    <Pressable
+      onPress={open}
+      style={({ pressed }) => [
+        styles.card,
+        { width },
+        pressed && styles.cardPressed,
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={`${product.name}, ${formatPrice(product.price)}`}
+    >
+      <View>
+        <ProductImage
+          uri={product.imageUrl}
+          style={{ width, height: width * 1.25 }}
+        />
 
-          {!product.inStock && (
-            <View style={styles.soldOut}>
-              <Text style={styles.soldOutText}>AGOTADO</Text>
-            </View>
-          )}
-
-          {badge && !isRow && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{badge}</Text>
-            </View>
-          )}
-
-          {!isRow && <View style={styles.veil} pointerEvents="none" />}
-        </View>
-
-        <View style={[styles.body, isRow && styles.bodyRow]}>
-          {product.brand && (
-            <Text style={styles.brand} numberOfLines={1}>
-              {product.brand.toUpperCase()}
+        {showWishlist && (
+          <Pressable
+            onPress={() => wishlist.toggle(product)}
+            hitSlop={8}
+            style={styles.wishButton}
+            accessibilityRole="button"
+            accessibilityLabel={
+              saved ? 'Quitar de la wishlist' : 'Añadir a la wishlist'
+            }
+          >
+            <Text style={[styles.wishIcon, saved && styles.wishIconOn]}>
+              {saved ? '♥' : '♡'}
             </Text>
-          )}
-          <Text style={styles.name} numberOfLines={2}>
-            {product.name}
-          </Text>
-          {product.price === undefined ? (
-            <Skeleton width={64} height={14} />
-          ) : (
-            <Text style={styles.price}>
-              {formatPrice(product.price, product.currency)}
-            </Text>
-          )}
-        </View>
-      </Pressable>
-    </Animated.View>
-  );
-};
+          </Pressable>
+        )}
 
-/** Hueco de una tarjeta mientras la campaña de DY resuelve. */
-export const ProductCardSkeleton: React.FC<{ variant?: 'rail' | 'grid' }> = ({
-  variant = 'rail',
-}) => {
-  const size = SIZES[variant];
-  return (
-    <View style={{ width: size.width }}>
-      <Skeleton width="100%" height={size.image} radius={theme.radius.md} />
-      <View style={styles.body}>
-        <Skeleton width={52} height={8} />
-        <Skeleton width="90%" height={13} />
-        <Skeleton width={68} height={13} />
+        {!product.inStock && (
+          <View style={styles.stockBadge}>
+            <Text style={styles.stockBadgeText}>Out of stock</Text>
+          </View>
+        )}
       </View>
-    </View>
+
+      <View style={styles.body}>
+        <Text style={styles.name} numberOfLines={2}>
+          {product.name}
+        </Text>
+        <Text style={styles.price}>{formatPrice(product.price)}</Text>
+        {product.rating !== undefined && (
+          <StarRating rating={product.rating} reviews={product.reviewCount} />
+        )}
+      </View>
+    </Pressable>
   );
 };
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: theme.color.surface,
+  card: { borderRadius: theme.radius.md, overflow: 'hidden' },
+  cardPressed: { opacity: 0.7 },
+  image: {
     borderRadius: theme.radius.md,
-    borderWidth: 1,
-    borderColor: theme.color.borderSoft,
-    overflow: 'hidden',
-    ...theme.shadow.card,
+    backgroundColor: theme.color.surfaceAlt,
   },
-  cardRow: { flexDirection: 'row', alignItems: 'center' },
-  imageWrap: { width: '100%', overflow: 'hidden' },
-  imageWrapRow: { width: 72, height: 72 },
-  veil: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: theme.color.veilBottom,
-    opacity: 0.35,
+  imageFallback: { alignItems: 'center', justifyContent: 'center' },
+  imageFallbackMark: {
+    fontSize: 34,
+    fontWeight: '800',
+    color: theme.color.borderStrong,
   },
-  badge: {
+  wishButton: {
     position: 'absolute',
-    top: theme.space(1),
-    left: theme.space(1),
-    backgroundColor: theme.color.accent,
+    top: theme.space.sm,
+    right: theme.space.sm,
+    width: 32,
+    height: 32,
     borderRadius: theme.radius.pill,
-    paddingHorizontal: theme.space(1),
-    paddingVertical: 3,
-  },
-  badgeText: { ...theme.font.micro, color: '#fff' },
-  soldOut: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: theme.color.scrim,
+    backgroundColor: 'rgba(255,255,255,0.92)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  soldOutText: { ...theme.font.micro, color: theme.color.textMuted },
-  body: { padding: theme.space(1.5), gap: 3 },
-  bodyRow: { flex: 1, paddingVertical: theme.space(1) },
-  brand: { ...theme.font.micro, color: theme.color.textFaint },
-  name: { ...theme.font.body, color: theme.color.text, lineHeight: 19 },
-  price: { ...theme.font.heading, color: theme.color.accentSoft },
+  wishIcon: { fontSize: 17, color: theme.color.textMuted },
+  wishIconOn: { color: theme.color.brand },
+  stockBadge: {
+    position: 'absolute',
+    bottom: theme.space.sm,
+    left: theme.space.sm,
+    paddingHorizontal: theme.space.sm,
+    paddingVertical: 3,
+    borderRadius: theme.radius.sm,
+    backgroundColor: 'rgba(18,18,26,0.78)',
+  },
+  stockBadgeText: {
+    color: '#fff',
+    fontSize: theme.font.caption,
+    fontWeight: '600',
+  },
+  body: { paddingTop: theme.space.sm, gap: 2 },
+  name: {
+    fontSize: theme.font.body,
+    color: theme.color.text,
+    lineHeight: 20,
+  },
+  price: {
+    fontSize: theme.font.body,
+    fontWeight: '700',
+    color: theme.color.text,
+  },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  star: { color: theme.color.star, fontSize: theme.font.label },
+  ratingText: { fontSize: theme.font.label, color: theme.color.textMuted },
+  reviewCount: { fontSize: theme.font.caption, color: theme.color.textFaint },
 });
