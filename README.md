@@ -170,13 +170,17 @@ fotos (Visual Search).
 Verificado en este repo: `tsc`, `eslint`, 41 tests y el bundle de Metro para
 Android e iOS.
 
-**Sin verificar: `src/dy/nativeClient.ts`.** Es el único fichero que importa el
-SDK, y sin el PAT no se puede instalar, así que `tsc` no lo comprueba contra los
-tipos reales y Metro solo lo empaqueta con un stub local. Las llamadas de
-pageviews, choose, eventos de carrito y engagement por decisión están calcadas de
-código que sí compiló contra el SDK. Las de **Assistant, Search, engagement por
-slot y los eventos de wishlist, búsqueda y login** están portadas del SDK de iOS
-y son las primeras que hay que contrastar al instalar el paquete.
+**`src/dy/nativeClient.ts` está verificado casi del todo.** Con el paquete
+instalado en una máquina con el PAT, `tsc` reveló tres desajustes, ya
+corregidos: `reportCustomEvents` era `reportCustomEvent` y su `map` un `Map` en
+vez de objeto plano; `reportAddToWishListEvent` exige un `size` que el SDK de
+iOS no pide; y `pageAttributes` va como `Map<string, PageAttribute>`. Todo lo
+demás compiló limpio, incluidos Assistant, Semantic y Visual Search, el
+engagement por slot y los eventos de keyword search y login.
+
+Queda **una línea** por confirmar: `toPageAttributes` asume que `PageAttribute`
+es una clase que envuelve el valor, como en iOS. Un `npx tsc --noEmit` con el
+paquete instalado lo confirma o lo desmiente.
 
 ## Detalles de la API que conviene conocer
 

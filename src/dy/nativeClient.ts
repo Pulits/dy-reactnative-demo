@@ -36,6 +36,7 @@ import {
   CurrencyType,
   DataCenter,
   Page,
+  PageAttribute,
   ResultStatus,
   type Choice,
   type DYResult,
@@ -45,6 +46,7 @@ import {
 import type { DyClient } from './DyClient';
 import type {
   DyAssistantResult,
+  DyPageAttributes,
   DyChoice,
   DyChooseRequest,
   DyChooseResult,
@@ -101,6 +103,26 @@ const toChoice = (choice: Choice): DyChoice => ({
   name: choice.name,
   variations: (choice.variations ?? []).map(toVariation),
 });
+
+/**
+ * Los custom attributes van en un `Map`, no en un objeto plano.
+ *
+ * ⚠️ Única línea del fichero sin verificar contra el SDK: se asume que
+ * `PageAttribute` es una clase que envuelve el valor, como en el SDK de iOS
+ * (`DyLibrary.PageAttribute(category)`). Si no lo fuera, `tsc` lo dirá aquí y
+ * el arreglo es cambiar cómo se construye el valor — nada más.
+ */
+const toPageAttributes = (
+  attributes: DyPageAttributes | undefined,
+): Map<string, PageAttribute> | undefined =>
+  attributes
+    ? new Map(
+        Object.entries(attributes).map(([key, value]) => [
+          key,
+          new PageAttribute(value),
+        ]),
+      )
+    : undefined;
 
 /** `CurrencyType` es un enum cerrado; una divisa desconocida se omite. */
 const toCurrency = (currency: string): CurrencyType | undefined =>
@@ -250,7 +272,7 @@ export const createNativeClient = (): DyClient => {
       const result = await choose.chooseVariations({
         selectorNames: request.selectorNames,
         page: toPage(request.page, locale),
-        pageAttributes: request.pageAttributes,
+        pageAttributes: toPageAttributes(request.pageAttributes),
         cuid: request.identity?.cuid,
         cuidType: request.identity?.cuidType,
         // Con `skusOnly: false` DY devuelve el producto completo del feed
