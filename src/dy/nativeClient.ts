@@ -332,6 +332,7 @@ export const createNativeClient = (): DyClient => {
         await events.reportAddToWishListEvent({
           name: args.eventName,
           productId: args.productId,
+          size: args.size,
         }),
       );
     },
@@ -359,14 +360,15 @@ export const createNativeClient = (): DyClient => {
 
     async reportCustomEvent(args): Promise<DyResult> {
       guard('reportCustomEvent');
-      const map = Object.fromEntries(
+      // El SDK espera un Map, no un objeto plano, y el método es singular.
+      const map = new Map(
         Object.entries(args.properties).map(([key, value]) => [
           key,
           toEventValue(value),
         ]),
       );
       return toResult(
-        await events.reportCustomEvents({ name: args.eventName, map }),
+        await events.reportCustomEvent({ name: args.eventName, map }),
       );
     },
 

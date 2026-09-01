@@ -530,6 +530,7 @@ export class DyService {
     const result = await this.client.reportAddToWishlist({
       eventName: 'Add to Wishlist',
       productId: skuOf(product),
+      size: '',
     });
     this.log(`💜 Add to Wishlist: ${product.name} → ${result.status}`);
   }

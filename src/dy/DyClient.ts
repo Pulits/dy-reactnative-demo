@@ -93,6 +93,12 @@ export interface DyClient {
   reportAddToWishlist(args: {
     eventName: string;
     productId: string;
+    /**
+     * El SDK la exige, aunque el de iOS no. Blueberry no tiene selector de
+     * talla, así que se manda vacía en vez de inventar un valor que DY
+     * acabaría guardando como afinidad.
+     */
+    size: string;
   }): Promise<DyResult>;
 
   reportKeywordSearch(args: {
