@@ -36,9 +36,9 @@ import {
   CurrencyType,
   DataCenter,
   Page,
-  PageAttribute,
   ResultStatus,
   type Choice,
+  type PageAttribute,
   type DYResult,
   type Variation,
 } from '@dynamicyield/react-native-sdk';
@@ -105,22 +105,16 @@ const toChoice = (choice: Choice): DyChoice => ({
 });
 
 /**
- * Los custom attributes van en un `Map`, no en un objeto plano.
- *
- * ⚠️ Única línea del fichero sin verificar contra el SDK: se asume que
- * `PageAttribute` es una clase que envuelve el valor, como en el SDK de iOS
- * (`DyLibrary.PageAttribute(category)`). Si no lo fuera, `tsc` lo dirá aquí y
- * el arreglo es cambiar cómo se construye el valor — nada más.
+ * Los custom attributes van en un `Map`, no en un objeto plano, y cada valor
+ * envuelto en `{ value }`. A diferencia del SDK de iOS, `PageAttribute` aquí es
+ * un tipo, no una clase: no se construye con `new`.
  */
 const toPageAttributes = (
   attributes: DyPageAttributes | undefined,
 ): Map<string, PageAttribute> | undefined =>
   attributes
     ? new Map(
-        Object.entries(attributes).map(([key, value]) => [
-          key,
-          new PageAttribute(value),
-        ]),
+        Object.entries(attributes).map(([key, value]) => [key, { value }]),
       )
     : undefined;
 

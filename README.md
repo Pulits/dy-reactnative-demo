@@ -178,9 +178,8 @@ iOS no pide; y `pageAttributes` va como `Map<string, PageAttribute>`. Todo lo
 demás compiló limpio, incluidos Assistant, Semantic y Visual Search, el
 engagement por slot y los eventos de keyword search y login.
 
-Queda **una línea** por confirmar: `toPageAttributes` asume que `PageAttribute`
-es una clase que envuelve el valor, como en iOS. Un `npx tsc --noEmit` con el
-paquete instalado lo confirma o lo desmiente.
+A diferencia del SDK de iOS, `PageAttribute` aquí es un tipo, no una clase: el
+valor va como `{ value }`, sin `new`.
 
 ## Detalles de la API que conviene conocer
 

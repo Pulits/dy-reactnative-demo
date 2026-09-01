@@ -19,11 +19,7 @@ siquiera con el adaptador simulado, porque resuelve el `require` de
 npx tsc --noEmit
 ```
 
-Queda **una línea sin verificar**: `toPageAttributes` en `nativeClient.ts`
-asume que `PageAttribute` es una clase que envuelve el valor, como en iOS
-(`DyLibrary.PageAttribute(category)`). Si `tsc` se queja ahí, el arreglo es
-cambiar cómo se construye el valor y nada más. Todo lo demás del fichero ya
-compiló contra los tipos reales.
+El fichero ya compila limpio contra los tipos reales del SDK.
 
 ## Arquitectura
 
